@@ -125,6 +125,12 @@ button.fila:active, a.fila:active { background: var(--papel-2); }
 .fila .der { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 15px; }
 .fila .der .meta { display: block; }
 .fila .der.ingreso { color: var(--cuero); }
+.fila .der.neutro { color: var(--tinta-2); }
+.fila .meta.pendiente { color: var(--cuero); }
+.fila.total { border-top: 1px solid var(--regla); }
+.fila.total b, .fila.total .der { font-weight: 600; }
+.filtros + .filtros { padding-top: 14px; padding-bottom: 14px; }
+.campo .ayuda { display: block; margin-top: 10px; }
 .fila.bloque { display: block; }
 .fila.bloque .arriba { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 .fila.bloque .arriba b { font-weight: 500; }

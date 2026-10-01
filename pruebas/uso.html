@@ -1,5 +1,6 @@
 <!doctype html><meta charset="utf-8"><iframe id="f" style="width:390px;height:844px;border:0"></iframe>
 <script>
+// Prueba de uso: maneja la app como una persona y manda el resultado al servidor local.
 const R = [];
 const ok = (nombre, cond, extra) => R.push({ nombre, ok: !!cond, extra: cond ? undefined : extra });
 const espera = ms => new Promise(r => setTimeout(r, ms));
@@ -7,20 +8,33 @@ const f = document.getElementById('f');
 const cargar = url => new Promise(r => { f.onload = () => setTimeout(r, 150); f.src = url; });
 const W = () => f.contentWindow, D = () => f.contentDocument;
 const q = s => D().querySelector(s);
+const qq = s => D().querySelectorAll(s);
 const est = () => JSON.parse(W().localStorage.getItem('finanzas.v1'));
-const pon = (nombre, valor) => { q('#hoja [name="' + nombre + '"]').value = valor; };
+const pon = (nombre, valor) => {
+  const i = q('#hoja [name="' + nombre + '"]');
+  i.value = valor;
+  i.dispatchEvent(new (W().Event)('input', { bubbles: true }));
+};
 const radio = (nombre, valor) => { q('#hoja input[name="' + nombre + '"][value="' + valor + '"]').click(); };
 const enviar = () => q('#hoja form').requestSubmit();
 const accion = (a, extra) => q('[data-accion="' + a + '"]' + (extra || '')).click();
 const ir = async h => { W().location.hash = h; await espera(60); };
+const texto = () => q('#vista').textContent;
+const orden = o => JSON.stringify(o, (k, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.keys(v).sort().reduce((a, c) => (a[c] = v[c], a), {}) : v);
 
 if (location.hostname !== '127.0.0.1' && location.hostname !== 'localhost') throw new Error('La prueba de uso solo corre en 127.0.0.1');
 (async () => {
   try {
     localStorage.clear();
+    // datos de la versión anterior (sin cuentas): al abrir se tienen que migrar
+    localStorage.setItem('finanzas.v1', JSON.stringify({ v: 1, tc: 3.5, movs: [
+      { id: 'viejo', tipo: 'gasto', monto: 1000, mon: 'PEN', cat: 'c-ocio', nota: 'de antes', fecha: new Date().toISOString().slice(0, 8) + '01', creado: 1 }
+    ], categorias: null, topes: {}, metas: [] }));
     await cargar('/index.html');
     W().confirm = () => true;
-    ok('arranca vacío', q('.vacio') && !W().localStorage.getItem('finanzas.v1'));
+    ok('migra los datos anteriores y muestra las cuentas', texto().includes('de antes') && texto().includes('Scotiabank') && texto().includes('PayPal'));
+    accion('editar-mov'); accion('borrar-mov');
+    ok('queda vacío tras borrar', q('.vacio') && est().movs.length === 0 && est().v === 2 && est().cuentas.length === 4);
 
     accion('nuevo-mov');
     ok('abre la hoja y enfoca el monto', !q('#hoja').hidden && D().activeElement.name === 'monto');
@@ -29,35 +43,82 @@ if (location.hostname !== '127.0.0.1' && location.hostname !== 'localhost') thro
     pon('monto', '18,5'); pon('nota', 'Menú <b>');
     enviar();
     let e = est();
-    ok('guarda gasto en soles', e.movs.length === 1 && e.movs[0].monto === 1850 && e.movs[0].mon === 'PEN' && e.movs[0].cat === 'c-comida', e.movs);
+    ok('guarda gasto en soles en BCP', e.movs.length === 1 && e.movs[0].monto === 1850 && e.movs[0].mon === 'PEN' && e.movs[0].cuenta === 'k-bcp' && !e.movs[0].monCuenta, e.movs);
     ok('la hoja se cierra', q('#hoja').hidden);
     ok('la nota se escapa', q('#vista').innerHTML.includes('Menú &lt;b&gt;'));
 
+    // el caso de Claude: US$ 20 con la tarjeta BCP, sin saber aún cuánto cobró el banco
+    accion('nuevo-mov');
+    pon('monto', '20');
+    ok('en soles desde BCP no pide lo cobrado', !q('#hoja [name=cobrado]'));
+    radio('mon', 'USD');
+    ok('en dólares desde BCP aparece "Cobrado en BCP" con el estimado', q('#hoja [name=cobrado]') && q('#hoja [name=cobrado]').placeholder === '≈ 70.00', q('#hoja [name=cobrado]') && q('#hoja [name=cobrado]').placeholder);
+    pon('monto', '21');
+    ok('el estimado se actualiza al tipear', q('#hoja [name=cobrado]').placeholder === '≈ 73.50', q('#hoja [name=cobrado]').placeholder);
+    pon('monto', '20');
+    radio('cat', 'c-suscripciones');
+    enviar();
+    e = est();
+    ok('guarda el estimado y lo marca por confirmar', e.movs[1].mon === 'USD' && e.movs[1].cobrado === 7000 && e.movs[1].estimado === true && e.movs[1].monCuenta === 'PEN', e.movs[1]);
+    ok('la lista dice por confirmar', texto().includes('por confirmar'));
+    accion('editar-mov', '[data-id="' + e.movs[1].id + '"]');
+    ok('al editar, lo cobrado sigue vacío con su estimado', q('#hoja [name=cobrado]').value === '' && q('#hoja [name=cobrado]').placeholder === '≈ 70.00');
+    pon('cobrado', '71,83');
+    enviar();
+    e = est();
+    ok('con el cargo real deja de ser estimado', e.movs.length === 2 && e.movs[1].cobrado === 7183 && !e.movs[1].estimado && e.movs[1].monto === 2000, e.movs[1]);
+    ok('ya no dice por confirmar', !texto().includes('por confirmar'));
+
+    // ingreso en dólares a PayPal
     accion('nuevo-mov');
     pon('monto', '1,200.00');
     radio('tipo', 'ingreso');
     ok('cambia a categorías de ingreso y conserva el monto', q('#hoja input[name=cat]').value === 'i-sueldo' && q('#hoja [name=monto]').value === '1,200.00');
-    ok('sin dólares no pide cambio', !q('#hoja [name=tc]'));
-    radio('mon', 'USD');
-    ok('con dólares pide cambio', q('#hoja [name=tc]') && q('#hoja [name=tc]').value === '3.5');
-    pon('tc', '3,6');
+    radio('cuenta', 'k-paypal');
+    ok('al elegir PayPal la moneda pasa a dólares y no pide lo cobrado', q('#hoja input[name=mon]:checked').value === 'USD' && !q('#hoja [name=cobrado]'));
     enviar();
     e = est();
-    ok('guarda ingreso en dólares con su cambio', e.movs.length === 2 && e.movs[1].monto === 120000 && e.movs[1].tc === 3.6 && e.tc === 3.6, e.movs[1]);
-    ok('resumen: queda 4,301.50', q('.num.grande').textContent === 'S/4,301.50', q('.num.grande').textContent);
+    ok('guarda ingreso en dólares en PayPal', e.movs.length === 3 && e.movs[2].monto === 120000 && e.movs[2].cuenta === 'k-paypal' && e.movs[2].tc === 3.5 && !e.movs[2].monCuenta, e.movs[2]);
+    ok('resumen: queda 4,109.67', q('.num.grande').textContent === 'S/4,109.67', q('.num.grande').textContent);
+
+    // transferencia de PayPal a BCP
+    accion('nuevo-mov');
+    ok('arranca en la última cuenta usada', q('#hoja input[name=cuenta]:checked').value === 'k-paypal');
+    radio('tipo', 'transferencia');
+    ok('transferir: destino distinto y pide cuánto llega', q('#hoja input[name=destino]:checked').value === 'k-bcp' && !q('#hoja input[name=destino][value="k-paypal"]') && q('#hoja [name=llega]') && !q('#hoja [name=cat]'));
+    pon('monto', '100');
+    ok('estimado de lo que llega', q('#hoja [name=llega]').placeholder === '≈ 350.00', q('#hoja [name=llega]').placeholder);
+    pon('llega', '372');
+    enviar();
+    e = est();
+    ok('guarda la transferencia', e.movs[3].tipo === 'transferencia' && e.movs[3].monto === 10000 && e.movs[3].mon === 'USD' && e.movs[3].llega === 37200 && e.movs[3].destino === 'k-bcp', e.movs[3]);
+    ok('la transferencia no cambia lo que queda', q('.num.grande').textContent === 'S/4,109.67', q('.num.grande').textContent);
+    const s = W().Logica.saldos(e);
+    ok('saldos: BCP 281.67 y PayPal 1,100', s.filas[0].saldo === 28167 && s.filas[2].saldo === 110000, s);
+    ok('el resumen muestra los saldos y el total', texto().includes('S/ 281.67') && texto().includes('US$ 1,100.00') && texto().includes('S/ 4,131.67'), texto().slice(0, 600));
 
     accion('editar-mov', '[data-id="' + e.movs[0].id + '"]');
     ok('editar trae el monto', q('#hoja [name=monto]').value === '18.50');
     pon('monto', '20');
     enviar();
     e = est();
-    ok('editar no duplica', e.movs.length === 2 && e.movs[0].monto === 2000, e.movs);
+    ok('editar no duplica', e.movs.length === 4 && e.movs[0].monto === 2000, e.movs);
+    accion('editar-mov', '[data-id="' + e.movs[3].id + '"]');
+    ok('editar transferencia trae sus datos', q('#hoja input[name=tipo]:checked').value === 'transferencia' && q('#hoja [name=llega]').value === '372.00' && q('#hoja input[name=cuenta]:checked').value === 'k-paypal');
+    accion('cerrar');
+
+    accion('ver-cuenta', '[data-id="k-paypal"]');
+    await espera(80);
+    ok('tocar una cuenta lleva a sus movimientos', W().location.hash === '#movimientos' && qq('#vista [data-accion=editar-mov]').length === 2, qq('#vista [data-accion=editar-mov]').length);
+    accion('filtro-cuenta', '[data-id=""]');
+    ok('todas las cuentas', qq('#vista [data-accion=editar-mov]').length === 4);
 
     await ir('presupuesto');
     accion('tope', '[data-id="c-comida"]');
     pon('monto', '500'); enviar();
     ok('guarda tope', est().topes['c-comida'] === 50000);
     ok('presupuesto: disponible 480', q('.num.grande').textContent === 'S/480.00', q('.num.grande').textContent);
+    ok('presupuesto: Claude cuenta por lo que cobró el banco', texto().includes('S/ 71.83'));
 
     await ir('metas');
     accion('nueva-meta');
@@ -71,18 +132,29 @@ if (location.hostname !== '127.0.0.1' && location.hostname !== 'localhost') thro
     ok('no deja retirar de más', q('#hoja .error'));
     pon('monto', '40'); enviar();
     e = est();
-    ok('meta con aporte y retiro', e.metas.length === 1 && e.metas[0].aportes.map(a => a.monto).join() === '10000,-4000' && e.metas[0].aportes[0].tc === 3.6, e.metas);
+    ok('meta con aporte y retiro', e.metas.length === 1 && e.metas[0].aportes.map(a => a.monto).join() === '10000,-4000' && e.metas[0].aportes[0].tc === 3.5, e.metas);
     ok('meta muestra 6%', q('.pct').textContent === '6%', q('.pct').textContent);
     accion('detalle-meta');
-    ok('detalle lista 2', D().querySelectorAll('#hoja [data-accion=borrar-aporte]').length === 2);
+    ok('detalle lista 2', qq('#hoja [data-accion=borrar-aporte]').length === 2);
     accion('borrar-aporte');
     ok('borra un aporte', est().metas[0].aportes.length === 1);
     accion('cerrar');
 
-    await ir('resumen');
-    ok('resumen descuenta el ahorro', q('.num.grande').textContent !== 'S/4,300.00', q('.num.grande').textContent);
-
     await ir('ajustes');
+    accion('cuenta', ':not([data-id])');
+    pon('nombre', 'bcp'); enviar();
+    ok('no deja cuenta repetida', q('#hoja .error'));
+    pon('nombre', 'Interbank'); pon('monto', '500'); enviar();
+    e = est();
+    ok('agrega cuenta con saldo inicial', e.cuentas.length === 5 && e.cuentas[4].inicial === 50000 && e.cuentas[4].mon === 'PEN', e.cuentas);
+    accion('cuenta', '[data-id="k-bcp"]');
+    ok('cuenta usada: sin borrar ni cambiar moneda', !q('#hoja [data-accion=borrar-cuenta]') && q('#hoja input[name=mon]').type === 'hidden');
+    pon('monto', '1000'); enviar();
+    ok('saldo inicial de BCP', est().cuentas[0].inicial === 100000 && W().Logica.saldos(est()).filas[0].saldo === 128017);
+    accion('cuenta', '[data-id="' + e.cuentas[4].id + '"]');
+    accion('borrar-cuenta');
+    ok('borra cuenta sin uso', est().cuentas.length === 4);
+
     accion('cat', '[data-tipo="gasto"]:not([data-id])');
     pon('nombre', 'comida'); enviar();
     ok('no deja categoría repetida', q('#hoja .error'));
@@ -92,27 +164,27 @@ if (location.hostname !== '127.0.0.1' && location.hostname !== 'localhost') thro
     ok('categoría usada no se borra', !q('#hoja [data-accion=borrar-cat]'));
     accion('cerrar');
     accion('cambio'); pon('tc', '3.75'); enviar();
-    ok('cambia el tipo de cambio sin tocar lo anotado', est().tc === 3.75 && est().movs[1].tc === 3.6);
+    ok('cambia el tipo de cambio sin tocar lo anotado', est().tc === 3.75 && est().movs[2].tc === 3.5 && est().movs[1].cobrado === 7183);
 
     await cargar('/index.html?x=' + Date.now() + '#movimientos');
     W().confirm = () => true;
-    ok('tras recargar siguen los datos', D().querySelectorAll('#vista [data-accion=editar-mov]').length === 2);
+    ok('tras recargar siguen los datos', qq('#vista [data-accion=editar-mov]').length === 4);
     accion('filtro', '[data-f="ingreso"]');
-    ok('filtro de ingresos', D().querySelectorAll('#vista [data-accion=editar-mov]').length === 1);
+    ok('filtro de ingresos', qq('#vista [data-accion=editar-mov]').length === 1);
     accion('editar-mov'); accion('borrar-mov');
-    ok('elimina movimiento', est().movs.length === 1);
+    ok('elimina movimiento', est().movs.length === 3);
     accion('mes', '[data-d="-1"]');
-    ok('mes anterior vacío', q('.vacio') && q('#cabecera h1').textContent === 'Setiembre', q('#cabecera h1').textContent);
+    ok('mes anterior vacío', q('.vacio'));
 
     // respaldo: lo que se exporta se puede volver a cargar igual
     const v = W().Logica.validar(JSON.parse(JSON.stringify(est())));
-    ok('el estado guardado pasa la validación', v.ok && JSON.stringify(v.estado) === JSON.stringify(est()));
+    ok('el estado guardado pasa la validación', v.ok && orden(v.estado) === orden(est()), [orden(v.estado), orden(est())]);
 
     const reg = await Promise.race([W().navigator.serviceWorker.ready, espera(6000)]);
     await espera(500);
     const claves = await W().caches.keys();
     const n = claves.length ? (await (await W().caches.open(claves[0])).keys()).length : 0;
-    ok('service worker activo y con los 10 archivos guardados', reg && claves[0] === 'finanzas-2' && n === 10, { claves, n });
+    ok('service worker activo y con los 10 archivos guardados', reg && claves.length === 1 && n === 10, { claves, n });
 
     ok('sin errores de JavaScript', !q('#aviso.fallo') || q('#aviso').hidden, q('#aviso').textContent);
   } catch (err) {

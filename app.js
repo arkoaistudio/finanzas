@@ -27,6 +27,7 @@
   let estado = cargar();
   let mes = L.mesDe(L.hoyISO());
   let filtro = 'todo';
+  let filtroCuenta = '';   // id de la cuenta que se está mirando en Movimientos, o vacío
   let hoja = null;
 
   // ---------- guardado ----------
@@ -77,14 +78,40 @@
     if (g.USD) t.push(L.fmt(g.USD, 'USD'));
     return t.join(' · ');
   }
+  function tcTexto() { return estado.tc.toFixed(3).replace(/0$/, ''); }
   function filaMov(m) {
+    const cta = L.cuentaDe(estado, m.cuenta);
+    const abre = '<button class="fila" data-accion="editar-mov" data-id="' + esc(m.id) + '"><span class="izq"><b>';
+    if (m.tipo === 'transferencia') {
+      const dest = L.cuentaDe(estado, m.destino);
+      return abre + 'Transferencia</b><span class="meta">' + esc(cta ? cta.nombre : '') + ' → ' + esc(dest ? dest.nombre : '') +
+        (m.nota ? ' · ' + esc(m.nota) : '') + '</span></span><span class="der neutro">' + L.fmt(m.monto, m.mon) +
+        (dest && dest.mon !== m.mon ? '<span class="meta' + (m.estimado ? ' pendiente' : '') + '">' + (m.estimado ? '≈ ' : '') +
+          L.fmt(m.llega, dest.mon) + '</span>' : '') + '</span></button>';
+    }
     const ing = m.tipo === 'ingreso';
-    return '<button class="fila" data-accion="editar-mov" data-id="' + esc(m.id) + '">' +
-      '<span class="izq"><b>' + esc(L.nombreCat(estado, m.tipo, m.cat)) + '</b>' +
-      (m.nota ? '<span class="meta">' + esc(m.nota) + '</span>' : '') + '</span>' +
-      '<span class="der' + (ing ? ' ingreso' : '') + '">' + (ing ? '+ ' : '') + L.fmt(m.monto, m.mon) +
-      (m.mon === 'USD' ? '<span class="meta">≈ ' + L.fmt(L.aSoles(m), 'PEN') + '</span>' : '') +
-      '</span></button>';
+    let sub = '';
+    if (m.monCuenta) {
+      sub = '<span class="meta' + (m.estimado ? ' pendiente' : '') + '">' + (m.estimado ? '≈ ' : '') +
+        L.fmt(m.cobrado, m.monCuenta) + (m.estimado ? ' · por confirmar' : '') + '</span>';
+    } else if (m.mon === 'USD') {
+      sub = '<span class="meta">≈ ' + L.fmt(L.aSoles(m), 'PEN') + '</span>';
+    }
+    return abre + esc(L.nombreCat(estado, m.tipo, m.cat)) + '</b><span class="meta">' + esc(cta ? cta.nombre : '') +
+      (m.nota ? ' · ' + esc(m.nota) : '') + '</span></span>' +
+      '<span class="der' + (ing ? ' ingreso' : '') + '">' + (ing ? '+ ' : '') + L.fmt(m.monto, m.mon) + sub + '</span></button>';
+  }
+  function seccionCuentas() {
+    const s = L.saldos(estado);
+    let h = '<div class="encabezado"><span class="eyebrow">Cuentas — saldo de hoy</span>' +
+      '<a class="eyebrow enlace" href="#ajustes">Editar</a></div><div class="lista">';
+    for (const f of s.filas) {
+      h += '<button class="fila" data-accion="ver-cuenta" data-id="' + esc(f.id) + '"><span class="izq"><b>' + esc(f.nombre) +
+        '</b></span><span class="der' + (f.saldo < 0 ? ' negativo' : '') + '">' + L.fmt(f.saldo, f.mon) + '</span></button>';
+    }
+    return h + '<div class="fila total"><span class="izq"><b>Total</b><span class="meta libre">' +
+      (s.USD ? 'En soles, con ' + L.fmt(s.USD, 'USD') + ' al cambio de ' + tcTexto() : 'En soles') + '</span></span>' +
+      '<span class="der' + (s.total < 0 ? ' negativo' : '') + '">' + L.fmt(s.total, 'PEN') + '</span></div></div>';
   }
   function vistaActual() {
     const h = location.hash.replace('#', '');
@@ -150,8 +177,9 @@
     if (!r.n) {
       return h + '<section class="vacio"><span class="eyebrow gris">Sin movimientos</span>' +
         '<p>Todavía no hay nada anotado en este mes.</p>' +
-        '<span class="meta">Toca el botón + de abajo para registrar un gasto o un ingreso.</span></section>';
+        '<span class="meta">Toca el botón + de abajo para registrar un gasto o un ingreso.</span></section>' + seccionCuentas();
     }
+    h += seccionCuentas();
 
     if (r.porCategoria.length) {
       h += '<div class="encabezado"><span class="eyebrow">Gasto por categoría</span>' +
@@ -177,8 +205,12 @@
     const chip = function (id, texto) {
       return '<a class="chip' + (filtro === id ? ' on' : '') + '" href="#movimientos" data-accion="filtro" data-f="' + id + '">' + texto + '</a>';
     };
-    let h = '<div class="filtros tira">' + chip('todo', 'Todo') + chip('gasto', 'Gastos') + chip('ingreso', 'Ingresos') + '</div>';
-    const dias = L.diasDelMes(estado, mes, filtro);
+    const chipCta = function (id, texto) {
+      return '<a class="chip' + (filtroCuenta === id ? ' on' : '') + '" href="#movimientos" data-accion="filtro-cuenta" data-id="' + esc(id) + '">' + esc(texto) + '</a>';
+    };
+    let h = '<div class="filtros tira">' + chip('todo', 'Todo') + chip('gasto', 'Gastos') + chip('ingreso', 'Ingresos') + '</div>' +
+      '<div class="filtros tira">' + chipCta('', 'Todas las cuentas') + estado.cuentas.map(function (c) { return chipCta(c.id, c.nombre); }).join('') + '</div>';
+    const dias = L.diasDelMes(estado, mes, filtro, filtroCuenta);
     if (!dias.length) {
       return h + '<section class="vacio"><span class="eyebrow gris">Sin movimientos</span>' +
         '<p>No hay nada anotado con este filtro en el mes.</p></section>';
@@ -258,10 +290,18 @@
       }
       return s + '</div>';
     };
-    return '<div class="encabezado"><span class="eyebrow">Dólares</span></div><div class="lista">' +
+    let ctas = '<div class="encabezado"><span class="eyebrow">Cuentas</span>' +
+      '<button class="eyebrow enlace" data-accion="cuenta">Agregar</button></div><div class="lista">';
+    for (const c of estado.cuentas) {
+      ctas += '<button class="fila" data-accion="cuenta" data-id="' + esc(c.id) + '"><span class="izq"><b>' + esc(c.nombre) + '</b>' +
+        '<span class="meta">' + (c.mon === 'USD' ? 'Dólares' : 'Soles') + ' · saldo inicial ' + L.fmt(c.inicial, c.mon) + '</span></span>' +
+        '<span class="flecha">' + ICO.der + '</span></button>';
+    }
+    ctas += '</div>';
+    return ctas + '<div class="encabezado"><span class="eyebrow">Dólares</span></div><div class="lista">' +
       '<button class="fila" data-accion="cambio"><span class="izq"><b>Tipo de cambio</b>' +
-      '<span class="meta libre">Para lo nuevo que anotes en dólares. Lo ya anotado no cambia.</span></span>' +
-      '<span class="der">S/ ' + estado.tc.toFixed(3).replace(/0$/, '') + '</span></button></div>' +
+      '<span class="meta libre">Para estimar lo que anotes en dólares y para el total de las cuentas. Lo ya anotado no cambia.</span></span>' +
+      '<span class="der">S/ ' + tcTexto() + '</span></button></div>' +
 
       '<div class="encabezado"><span class="eyebrow">Respaldo</span><span class="eyebrow gris">' +
       (dias === null ? 'Nunca' : dias === 0 ? 'Hoy' : 'Hace ' + dias + (dias === 1 ? ' día' : ' días')) + '</span></div>' +
@@ -304,18 +344,55 @@
   const HOJAS = {
     mov: function () {
       const d = hoja.d;
-      const cats = estado.categorias[d.tipo];
-      return topeHoja(hoja.id ? 'Editar movimiento' : 'Nuevo movimiento') + '<form data-form="mov">' +
-        '<div class="campo">' + seg('tipo', [['gasto', 'Gasto'], ['ingreso', 'Ingreso']], d.tipo, true) + '</div>' +
-        campoMonto(d, 'Monto') +
-        '<div class="campo"><span class="eyebrow">Moneda</span>' + seg('mon', MONEDAS, d.mon, true) + '</div>' +
-        (d.mon === 'USD' ? campoTexto('tc', 'Tipo de cambio (soles por dólar)', d.tc, 'inputmode="decimal"') : '') +
-        '<div class="campo"><span class="eyebrow">Categoría</span><div class="tira">' + cats.map(function (c) {
-          return '<label class="chip"><input type="radio" name="cat" value="' + esc(c.id) + '"' + (c.id === d.cat ? ' checked' : '') + '><span>' + esc(c.nombre) + '</span></label>';
-        }).join('') + '</div></div>' +
-        '<div class="dos">' + campoFecha('fecha', 'Fecha', d.fecha) + campoTexto('nota', 'Nota', d.nota, 'placeholder="Opcional" maxlength="200"') + '</div>' +
+      const transf = d.tipo === 'transferencia';
+      const cta = L.cuentaDe(estado, d.cuenta) || estado.cuentas[0];
+      const chips = function (nombre, valor, excluir) {
+        return '<div class="tira">' + estado.cuentas.filter(function (c) { return c.id !== excluir; }).map(function (c) {
+          return '<label class="chip"><input type="radio" name="' + nombre + '" value="' + esc(c.id) + '"' + (c.id === valor ? ' checked' : '') +
+            ' data-repinta><span>' + esc(c.nombre) + '</span></label>';
+        }).join('') + '</div>';
+      };
+      // campo para lo que de verdad movió la cuenta cuando la moneda no es la misma
+      const real = function (nombre, etiqueta, de, a) {
+        return '<label class="campo"><span class="eyebrow">' + etiqueta + ' (' + L.SIMBOLO[a] + ')</span>' +
+          '<input type="text" name="' + nombre + '" inputmode="decimal" autocomplete="off" value="' + esc(d[nombre] || '') + '" ' +
+          'data-estima data-de="' + de + '" data-a="' + a + '" placeholder="' + estimado(d.monto, de, a) + '">' +
+          '<span class="meta ayuda">Déjalo vacío si todavía no sabes cuánto fue: se estima con el cambio de ' + String(hoja.tc) +
+          '. Cuando veas el monto real, editas el movimiento y lo pones.</span></label>';
+      };
+      let h = topeHoja(hoja.id ? 'Editar movimiento' : 'Nuevo movimiento') + '<form data-form="mov">' +
+        '<div class="campo">' + seg('tipo', [['gasto', 'Gasto'], ['ingreso', 'Ingreso'], ['transferencia', 'Transferir']], d.tipo, true) + '</div>';
+      if (transf) {
+        const dest = L.cuentaDe(estado, d.destino);
+        h += campoMonto({ monto: d.monto, mon: cta.mon }, 'Monto') +
+          '<div class="campo"><span class="eyebrow">Sale de</span>' + chips('cuenta', cta.id) + '</div>' +
+          '<div class="campo"><span class="eyebrow">Va a</span>' + chips('destino', d.destino, cta.id) + '</div>' +
+          (dest && dest.mon !== cta.mon ? real('llega', 'Llega a ' + esc(dest.nombre), cta.mon, dest.mon) : '');
+      } else {
+        h += campoMonto(d, 'Monto') +
+          '<div class="campo"><span class="eyebrow">Moneda</span>' + seg('mon', MONEDAS, d.mon, true) + '</div>' +
+          '<div class="campo"><span class="eyebrow">' + (d.tipo === 'ingreso' ? 'Entra a' : 'Sale de') + '</span>' + chips('cuenta', cta.id) + '</div>' +
+          (cta.mon !== d.mon ? real('cobrado', (d.tipo === 'ingreso' ? 'Recibido en ' : 'Cobrado en ') + esc(cta.nombre), d.mon, cta.mon) : '') +
+          '<div class="campo"><span class="eyebrow">Categoría</span><div class="tira">' + estado.categorias[d.tipo].map(function (c) {
+            return '<label class="chip"><input type="radio" name="cat" value="' + esc(c.id) + '"' + (c.id === d.cat ? ' checked' : '') + '><span>' + esc(c.nombre) + '</span></label>';
+          }).join('') + '</div></div>';
+      }
+      return h + '<div class="dos">' + campoFecha('fecha', 'Fecha', d.fecha) + campoTexto('nota', 'Nota', d.nota, 'placeholder="Opcional" maxlength="200"') + '</div>' +
         errorHoja() + '<div class="pie-hoja"><button class="btn prim ancho">Guardar</button>' +
         (hoja.id ? '<button type="button" class="btn peligro ancho" data-accion="borrar-mov">Eliminar</button>' : '') + '</div></form>';
+    },
+    cuenta: function () {
+      const usos = hoja.id ? L.usosCuenta(estado, hoja.id) : 0;
+      const d = hoja.d;
+      return topeHoja(hoja.id ? 'Editar cuenta' : 'Nueva cuenta') + '<form data-form="cuenta">' +
+        campoTexto('nombre', 'Nombre', d.nombre, 'placeholder="BCP, Interbank, Yape…" maxlength="40"') +
+        (usos ? '<input type="hidden" name="mon" value="' + d.mon + '">' :
+          '<div class="campo"><span class="eyebrow">Moneda</span>' + seg('mon', MONEDAS, d.mon, true) + '</div>') +
+        campoMonto(d, 'Saldo inicial') +
+        '<p class="meta nota-hoja">Lo que tenías en la cuenta antes de empezar a anotar. Si lo dejas vacío, arranca en cero.' +
+        (usos ? ' Ya tiene ' + usos + (usos === 1 ? ' movimiento' : ' movimientos') + ': se puede renombrar, pero no borrar ni cambiarle la moneda.' : '') + '</p>' +
+        errorHoja() + '<div class="pie-hoja"><button class="btn prim ancho">Guardar</button>' +
+        (hoja.id && !usos && estado.cuentas.length > 1 ? '<button type="button" class="btn peligro ancho" data-accion="borrar-cuenta">Eliminar</button>' : '') + '</div></form>';
     },
     tope: function () {
       const nombre = L.nombreCat(estado, 'gasto', hoja.id);
@@ -378,6 +455,10 @@
     }
   };
 
+  function estimado(texto, de, a) {
+    const c = L.parseMonto(texto);
+    return c ? '≈ ' + L.aTexto(L.convertir(c, de, a, hoja.tc)) : 'Opcional';
+  }
   function errorHoja() { return hoja.error ? '<p class="error">' + esc(hoja.error) + '</p>' : ''; }
   function meta(id) { return estado.metas.filter(function (g) { return g.id === id; })[0]; }
 
@@ -465,21 +546,33 @@
     filtro: function (d) { filtro = d.f; pintar(); },
     cerrar: cerrar,
 
+    'filtro-cuenta': function (d) { filtroCuenta = d.id || ''; pintar(); },
+    'ver-cuenta': function (d) { filtroCuenta = d.id; filtro = 'todo'; location.hash = 'movimientos'; },
+
     'nuevo-mov': function () {
-      // si se está mirando otro mes, la fecha arranca en ese mes
+      // arranca en la última cuenta usada; si se mira otro mes, la fecha cae en ese mes
       const hoy = L.hoyISO();
+      let ultimo = null;
+      for (const m of estado.movs) if (m.tipo !== 'transferencia' && (!ultimo || (m.creado || 0) > (ultimo.creado || 0))) ultimo = m;
+      const cta = (ultimo && L.cuentaDe(estado, ultimo.cuenta)) || estado.cuentas[0];
+      const otra = estado.cuentas.filter(function (c) { return c.id !== cta.id; })[0];
       abrir({
-        tipo: 'mov', id: null,
-        d: { tipo: 'gasto', monto: '', mon: 'PEN', tc: String(estado.tc), cat: estado.categorias.gasto[0].id,
-          fecha: L.mesDe(hoy) === mes ? hoy : mes + '-01', nota: '' }
+        tipo: 'mov', id: null, tc: estado.tc,
+        d: { tipo: 'gasto', monto: '', mon: cta.mon, cuenta: cta.id, destino: otra ? otra.id : '', cobrado: '', llega: '',
+          cat: estado.categorias.gasto[0].id, fecha: L.mesDe(hoy) === mes ? hoy : mes + '-01', nota: '' }
       }, 'monto');
     },
     'editar-mov': function (d) {
       const m = estado.movs.filter(function (x) { return x.id === d.id; })[0];
       if (!m) return;
+      const transf = m.tipo === 'transferencia';
+      const otra = estado.cuentas.filter(function (c) { return c.id !== m.cuenta; })[0];
       abrir({
-        tipo: 'mov', id: m.id,
-        d: { tipo: m.tipo, monto: L.aTexto(m.monto), mon: m.mon, tc: String(m.tc || estado.tc), cat: m.cat, fecha: m.fecha, nota: m.nota || '' }
+        tipo: 'mov', id: m.id, tc: m.tc || estado.tc,
+        d: { tipo: m.tipo, monto: L.aTexto(m.monto), mon: m.mon, cuenta: m.cuenta, destino: m.destino || (otra ? otra.id : ''),
+          cobrado: m.monCuenta && !m.estimado ? L.aTexto(m.cobrado) : '',
+          llega: transf && !m.estimado && m.llega !== m.monto ? L.aTexto(m.llega) : '',
+          cat: transf ? estado.categorias.gasto[0].id : m.cat, fecha: m.fecha, nota: m.nota || '' }
       });
     },
     'borrar-mov': function () {
@@ -530,6 +623,16 @@
       guardar(); cerrar(); pintar();
     },
     cambio: function () { abrir({ tipo: 'cambio', d: { tc: String(estado.tc) } }, 'tc'); },
+    cuenta: function (d) {
+      const c = d.id ? L.cuentaDe(estado, d.id) : null;
+      abrir({ tipo: 'cuenta', id: c ? c.id : null,
+        d: { nombre: c ? c.nombre : '', mon: c ? c.mon : 'PEN', monto: c && c.inicial ? L.aTexto(c.inicial) : '' } }, c ? null : 'nombre');
+    },
+    'borrar-cuenta': function () {
+      estado.cuentas = estado.cuentas.filter(function (c) { return c.id !== hoja.id; });
+      if (filtroCuenta === hoja.id) filtroCuenta = '';
+      guardar(); cerrar(); pintar();
+    },
 
     respaldo: async function () {
       const ok = await entregar('finanzas-respaldo-' + L.hoyISO() + '.json', JSON.stringify(estado, null, 1), 'application/json');
@@ -552,18 +655,32 @@
     mov: function (fd) {
       const monto = L.parseMonto(fd.get('monto'));
       if (!monto) return fallo('Pon un monto mayor que cero.');
-      const tipo = fd.get('tipo'), mon = fd.get('mon'), fecha = fd.get('fecha');
+      const tipo = fd.get('tipo'), fecha = fd.get('fecha');
       if (!fecha) return fallo('Falta la fecha.');
-      if (!fd.get('cat')) return fallo('Elige una categoría.');
-      const m = { tipo: tipo, monto: monto, mon: mon, cat: fd.get('cat'), nota: String(fd.get('nota') || '').trim(), fecha: fecha };
-      if (mon === 'USD') {
-        const tc = L.parseCambio(fd.get('tc'));
-        if (!tc) return fallo('Pon el tipo de cambio, por ejemplo 3.50.');
-        m.tc = tc;
-        estado.tc = tc;
+      const cta = L.cuentaDe(estado, fd.get('cuenta'));
+      if (!cta) return fallo('Elige una cuenta.');
+      const viejo = hoja.id ? estado.movs.filter(function (x) { return x.id === hoja.id; })[0] : null;
+      const m = { tipo: tipo, monto: monto, mon: tipo === 'transferencia' ? cta.mon : fd.get('mon'), tc: hoja.tc,
+        cuenta: cta.id, cat: '', nota: String(fd.get('nota') || '').trim(), fecha: fecha };
+      if (tipo === 'transferencia') {
+        const dest = L.cuentaDe(estado, fd.get('destino'));
+        if (!dest || dest.id === cta.id) return fallo('Elige a qué cuenta va. Tiene que ser distinta de la que sale.');
+        m.destino = dest.id;
+        const llega = dest.mon === cta.mon ? monto : L.parseMonto(fd.get('llega'));
+        if (llega) m.llega = llega;
+        else { m.llega = L.convertir(monto, cta.mon, dest.mon, m.tc); m.estimado = true; }
+      } else {
+        if (!fd.get('cat')) return fallo('Elige una categoría.');
+        m.cat = fd.get('cat');
+        if (cta.mon !== m.mon) {
+          // otra moneda que la de la cuenta: vale lo que cobró el banco, o un estimado mientras no se sepa
+          const cobrado = L.parseMonto(fd.get('cobrado'));
+          m.monCuenta = cta.mon;
+          if (cobrado) m.cobrado = cobrado;
+          else { m.cobrado = L.convertir(monto, m.mon, cta.mon, m.tc); m.estimado = true; }
+        }
       }
-      if (hoja.id) {
-        const viejo = estado.movs.filter(function (x) { return x.id === hoja.id; })[0];
+      if (viejo) {
         m.id = viejo.id; m.creado = viejo.creado;
         estado.movs[estado.movs.indexOf(viejo)] = m;
       } else {
@@ -572,6 +689,21 @@
       }
       mes = L.mesDe(fecha);
       guardar(); cerrar(); pintar(); aviso('Guardado');
+    },
+    cuenta: function (fd) {
+      const nombre = String(fd.get('nombre') || '').trim();
+      if (!nombre) return fallo('Ponle un nombre a la cuenta.');
+      const repetida = estado.cuentas.some(function (c) { return c.id !== hoja.id && c.nombre.toLowerCase() === nombre.toLowerCase(); });
+      if (repetida) return fallo('Ya hay una cuenta con ese nombre.');
+      const inicial = L.parseMonto(fd.get('monto')) || 0;
+      if (hoja.id) {
+        const c = L.cuentaDe(estado, hoja.id);
+        c.nombre = nombre; c.inicial = inicial;
+        if (!L.usosCuenta(estado, c.id)) c.mon = fd.get('mon');
+      } else {
+        estado.cuentas.push({ id: 'k-' + L.uid(), nombre: nombre, mon: fd.get('mon'), inicial: inicial });
+      }
+      guardar(); cerrar(); pintar();
     },
     tope: function (fd) {
       const monto = L.parseMonto(fd.get('monto'));
@@ -642,10 +774,27 @@
     leerBorrador();
     hoja.error = '';
     if (hoja.tipo === 'mov') {
-      const cats = estado.categorias[hoja.d.tipo];
-      if (!cats.some(function (c) { return c.id === hoja.d.cat; })) hoja.d.cat = cats[0].id;
+      const d = hoja.d;
+      const cta = L.cuentaDe(estado, d.cuenta) || estado.cuentas[0];
+      if (d.tipo === 'transferencia') {
+        if (!d.destino || d.destino === cta.id) {
+          const otra = estado.cuentas.filter(function (c) { return c.id !== cta.id; })[0];
+          d.destino = otra ? otra.id : '';
+        }
+      } else {
+        // al elegir cuenta, la moneda se acomoda a la de la cuenta; después se puede cambiar
+        if (e.target.name === 'cuenta') d.mon = cta.mon;
+        const cats = estado.categorias[d.tipo];
+        if (!cats.some(function (c) { return c.id === d.cat; })) d.cat = cats[0].id;
+      }
     }
     pintarHoja();
+  });
+  // mientras se tipea el monto, se actualiza el estimado del campo de al lado
+  document.addEventListener('input', function (e) {
+    if (e.target.name !== 'monto' || !hoja) return;
+    const i = $('#hoja [data-estima]');
+    if (i) i.placeholder = estimado(e.target.value, i.dataset.de, i.dataset.a);
   });
   window.addEventListener('hashchange', function () {
     if (hoja) cerrar();

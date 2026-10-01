@@ -7,7 +7,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  const VERSION = 1;
+  const VERSION = 2;
   const SIMBOLO = { PEN: 'S/', USD: 'US$' };
   const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
     'agosto', 'setiembre', 'octubre', 'noviembre', 'diciembre'];
@@ -92,9 +92,22 @@
   }
   function aTexto(centimos) { return (Math.abs(centimos) / 100).toFixed(2); }
 
-  // Lo que vale en soles un movimiento o aporte, al cambio con que se registró.
+  function convertir(monto, de, a, tc) {
+    if (de === a) return monto;
+    return de === 'USD' ? Math.round(monto * tc) : Math.round(monto / tc);
+  }
+
+  /* Lo que vale en soles un movimiento o aporte. Si fue en dólares pero salió
+     de una cuenta en soles, vale lo que cobró el banco, no el cambio teórico. */
   function aSoles(x) {
-    return x.mon === 'USD' ? Math.round(x.monto * (x.tc || 1)) : x.monto;
+    if (x.mon !== 'USD') return x.monto;
+    if (x.monCuenta === 'PEN' && x.cobrado) return x.cobrado;
+    return Math.round(x.monto * (x.tc || 1));
+  }
+
+  // Lo que el movimiento mueve en su cuenta, en la moneda de la cuenta.
+  function enCuenta(m) {
+    return m.monCuenta && m.monCuenta !== m.mon ? m.cobrado : m.monto;
   }
 
   // ---------- estado ----------
@@ -111,11 +124,50 @@
           const c = cat(n); c.id = 'i-' + c.id.slice(2); return c;
         })
       },
+      cuentas: [
+        { id: 'k-bcp', nombre: 'BCP', mon: 'PEN', inicial: 0 },
+        { id: 'k-scotiabank', nombre: 'Scotiabank', mon: 'PEN', inicial: 0 },
+        { id: 'k-paypal', nombre: 'PayPal', mon: 'USD', inicial: 0 },
+        { id: 'k-efectivo', nombre: 'Efectivo', mon: 'PEN', inicial: 0 }
+      ],
       movs: [],
       topes: {},
       metas: [],
       ultimoRespaldo: null
     };
+  }
+
+  function cuentaDe(estado, id) {
+    for (const c of estado.cuentas) if (c.id === id) return c;
+    return null;
+  }
+  function usosCuenta(estado, id) {
+    let n = 0;
+    for (const m of estado.movs) if (m.cuenta === id || m.destino === id) n++;
+    return n;
+  }
+
+  /* Saldo de cada cuenta: lo que tenía al empezar, más lo que entró, menos lo
+     que salió. El total va en soles, con los dólares al cambio de hoy. */
+  function saldos(estado) {
+    const s = {};
+    for (const c of estado.cuentas) s[c.id] = c.inicial || 0;
+    for (const m of estado.movs) {
+      if (!(m.cuenta in s)) continue;
+      if (m.tipo === 'transferencia') {
+        s[m.cuenta] -= m.monto;
+        if (m.destino in s) s[m.destino] += m.llega;
+      } else {
+        s[m.cuenta] += (m.tipo === 'ingreso' ? 1 : -1) * enCuenta(m);
+      }
+    }
+    const r = { filas: [], PEN: 0, USD: 0, total: 0 };
+    for (const c of estado.cuentas) {
+      r.filas.push({ id: c.id, nombre: c.nombre, mon: c.mon, saldo: s[c.id] });
+      r[c.mon] += s[c.id];
+    }
+    r.total = r.PEN + Math.round(r.USD * estado.tc);
+    return r;
   }
 
   function nombreCat(estado, tipo, id) {
@@ -140,7 +192,7 @@
     };
     const porCat = {};
     for (const m of estado.movs) {
-      if (mesDe(m.fecha) !== mes) continue;
+      if (mesDe(m.fecha) !== mes || m.tipo === 'transferencia') continue;
       const g = m.tipo === 'ingreso' ? r.ingresos : r.gastos;
       const s = aSoles(m);
       g[m.mon] += m.monto;
@@ -164,17 +216,18 @@
   }
 
   // Movimientos de un mes agrupados por día, lo más reciente arriba.
-  function diasDelMes(estado, mes, filtro) {
+  function diasDelMes(estado, mes, filtro, cuenta) {
     const dias = {};
     for (const m of estado.movs) {
       if (mesDe(m.fecha) !== mes) continue;
       if (filtro && filtro !== 'todo' && m.tipo !== filtro) continue;
+      if (cuenta && m.cuenta !== cuenta && m.destino !== cuenta) continue;
       (dias[m.fecha] = dias[m.fecha] || []).push(m);
     }
     return Object.keys(dias).sort().reverse().map(function (f) {
       const movs = dias[f].sort(function (a, b) { return (b.creado || 0) - (a.creado || 0); });
       let neto = 0;
-      for (const m of movs) neto += (m.tipo === 'ingreso' ? 1 : -1) * aSoles(m);
+      for (const m of movs) if (m.tipo !== 'transferencia') neto += (m.tipo === 'ingreso' ? 1 : -1) * aSoles(m);
       return { fecha: f, movs: movs, neto: neto };
     });
   }
@@ -248,18 +301,39 @@
         gasto: cats(o.categorias && o.categorias.gasto, base.categorias.gasto),
         ingreso: cats(o.categorias && o.categorias.ingreso, base.categorias.ingreso)
       },
-      movs: [], topes: {}, metas: [],
+      cuentas: [], movs: [], topes: {}, metas: [],
       ultimoRespaldo: typeof o.ultimoRespaldo === 'string' ? o.ultimoRespaldo : null
     };
+    for (const c of Array.isArray(o.cuentas) ? o.cuentas : []) {
+      if (!c || !texto(c.id) || !texto(c.nombre).trim() || !SIMBOLO[c.mon]) continue;
+      e.cuentas.push({ id: c.id, nombre: texto(c.nombre.trim(), 40), mon: c.mon, inicial: entero(c.inicial) ? c.inicial : 0 });
+    }
+    if (!e.cuentas.length) e.cuentas = base.cuentas;   // respaldos de antes de que hubiera cuentas
     for (const m of o.movs) {
-      if (!m || (m.tipo !== 'gasto' && m.tipo !== 'ingreso')) continue;
+      if (!m || (m.tipo !== 'gasto' && m.tipo !== 'ingreso' && m.tipo !== 'transferencia')) continue;
       if (!entero(m.monto) || m.monto <= 0 || !SIMBOLO[m.mon] || !FECHA.test(m.fecha)) continue;
+      const cta = cuentaDe(e, m.cuenta) || e.cuentas[0];
       const limpio = {
         id: texto(m.id) || uid(), tipo: m.tipo, monto: m.monto, mon: m.mon,
-        cat: texto(m.cat), nota: texto(m.nota, 200), fecha: m.fecha,
+        tc: typeof m.tc === 'number' && m.tc > 0 ? m.tc : e.tc,
+        cuenta: cta.id, cat: texto(m.cat), nota: texto(m.nota, 200), fecha: m.fecha,
         creado: typeof m.creado === 'number' ? m.creado : 0
       };
-      if (m.mon === 'USD') limpio.tc = typeof m.tc === 'number' && m.tc > 0 ? m.tc : e.tc;
+      if (m.tipo === 'transferencia') {
+        const dest = cuentaDe(e, m.destino);
+        if (!dest || dest.id === cta.id) continue;
+        limpio.mon = cta.mon;
+        limpio.cat = '';
+        limpio.destino = dest.id;
+        limpio.llega = entero(m.llega) && m.llega > 0 ? m.llega : convertir(m.monto, cta.mon, dest.mon, limpio.tc);
+        if (m.estimado && cta.mon !== dest.mon) limpio.estimado = true;
+      } else if (cta.mon !== m.mon) {
+        // pagado en una moneda desde una cuenta en otra: se guarda lo que movió en la cuenta
+        const sabe = entero(m.cobrado) && m.cobrado > 0 && m.monCuenta === cta.mon;
+        limpio.monCuenta = cta.mon;
+        limpio.cobrado = sabe ? m.cobrado : convertir(m.monto, m.mon, cta.mon, limpio.tc);
+        if (!sabe || m.estimado) limpio.estimado = true;
+      }
       e.movs.push(limpio);
     }
     if (o.topes && typeof o.topes === 'object') {
@@ -295,17 +369,23 @@
     const plata = function (c) { return (c / 100).toFixed(2); };
     const filas = [];
     for (const m of estado.movs) {
-      filas.push([m.fecha, m.tipo === 'ingreso' ? 'Ingreso' : 'Gasto', nombreCat(estado, m.tipo, m.cat),
-        m.nota || '', m.mon, plata(m.monto), m.mon === 'USD' ? m.tc : '', plata(aSoles(m))]);
+      const cta = (cuentaDe(estado, m.cuenta) || {}).nombre || '';
+      if (m.tipo === 'transferencia') {
+        filas.push([m.fecha, 'Transferencia', cta + ' → ' + ((cuentaDe(estado, m.destino) || {}).nombre || ''), '',
+          m.nota || '', m.mon, plata(m.monto), m.mon === 'USD' ? m.tc : '', plata(aSoles(m))]);
+      } else {
+        filas.push([m.fecha, m.tipo === 'ingreso' ? 'Ingreso' : 'Gasto', cta, nombreCat(estado, m.tipo, m.cat),
+          m.nota || '', m.mon, plata(m.monto), m.mon === 'USD' ? m.tc : '', plata(aSoles(m))]);
+      }
     }
     for (const g of estado.metas) {
       for (const a of g.aportes) {
-        filas.push([a.fecha, a.monto < 0 ? 'Retiro de ahorro' : 'Ahorro', g.nombre, a.nota || '', g.mon,
+        filas.push([a.fecha, a.monto < 0 ? 'Retiro de ahorro' : 'Ahorro', '', g.nombre, a.nota || '', g.mon,
           plata(a.monto), g.mon === 'USD' ? a.tc : '', plata(aSoles({ monto: a.monto, mon: g.mon, tc: a.tc }))]);
       }
     }
     filas.sort(function (a, b) { return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0; });
-    filas.unshift(['Fecha', 'Tipo', 'Categoría', 'Nota', 'Moneda', 'Monto', 'Tipo de cambio', 'Monto en soles']);
+    filas.unshift(['Fecha', 'Tipo', 'Cuenta', 'Categoría', 'Nota', 'Moneda', 'Monto', 'Tipo de cambio', 'Monto en soles']);
     return '﻿' + filas.map(function (f) { return f.map(celda).join(';'); }).join('\r\n') + '\r\n';
   }
 
@@ -315,21 +395,26 @@
     const mes = mesDe(hoy), antes = moverMes(mes, -1);
     const dia = function (m, d) { return m + '-' + dos(d); };
     let n = 0;
-    const mov = function (tipo, soles, cat, nota, fecha, mon) {
-      const m = { id: 'd' + (++n), tipo: tipo, monto: Math.round(soles * 100), mon: mon || 'PEN', cat: cat, nota: nota, fecha: fecha, creado: n };
-      if (m.mon === 'USD') m.tc = e.tc;
+    e.tc = 3.52;
+    e.cuentas[0].inicial = 250000; e.cuentas[1].inicial = 180000; e.cuentas[2].inicial = 41000; e.cuentas[3].inicial = 20000;
+    const mov = function (tipo, plata, cat, nota, fecha, mon, cuenta) {
+      const m = { id: 'd' + (++n), tipo: tipo, monto: Math.round(plata * 100), mon: mon || 'PEN', tc: e.tc,
+        cuenta: cuenta || 'k-bcp', cat: cat, nota: nota, fecha: fecha, creado: n };
+      const cta = cuentaDe(e, m.cuenta);
+      if (cta.mon !== m.mon) { m.monCuenta = cta.mon; m.cobrado = convertir(m.monto, m.mon, cta.mon, e.tc); m.estimado = true; }
       e.movs.push(m);
     };
-    e.tc = 3.52;
     mov('ingreso', 4800, 'i-sueldo', 'Quincena y fin de mes', dia(mes, 1));
-    mov('ingreso', 320, 'i-honorarios', 'Renders para un cliente', dia(mes, 1), 'USD');
+    mov('ingreso', 320, 'i-honorarios', 'Renders para un cliente', dia(mes, 1), 'USD', 'k-paypal');
     mov('gasto', 1400, 'c-casa', 'Alquiler', dia(mes, 1));
-    mov('gasto', 286.4, 'c-mercado', 'Compra de la semana', dia(mes, 1));
-    mov('gasto', 18, 'c-comida', 'Menú', dia(mes, 1));
+    mov('gasto', 286.4, 'c-mercado', 'Compra de la semana', dia(mes, 1), 'PEN', 'k-scotiabank');
+    mov('gasto', 18, 'c-comida', 'Menú', dia(mes, 1), 'PEN', 'k-efectivo');
     mov('gasto', 24.5, 'c-transporte', 'Taxi', dia(mes, 1));
     mov('gasto', 20, 'c-suscripciones', 'Claude', dia(mes, 1), 'USD');
     mov('gasto', 189.9, 'c-servicios', 'Luz e internet', dia(mes, 1));
-    mov('gasto', 95, 'c-ocio', 'Cine y cena', dia(mes, 1));
+    mov('gasto', 95, 'c-ocio', 'Cine y cena', dia(mes, 1), 'PEN', 'k-scotiabank');
+    e.movs.push({ id: 'd' + (++n), tipo: 'transferencia', monto: 15000, mon: 'USD', tc: e.tc, cuenta: 'k-paypal', destino: 'k-bcp',
+      llega: 52100, cat: '', nota: 'Retiro a mi cuenta', fecha: dia(mes, 1), creado: n });
     mov('ingreso', 4800, 'i-sueldo', '', dia(antes, 1));
     mov('gasto', 1400, 'c-casa', 'Alquiler', dia(antes, 2));
     mov('gasto', 940, 'c-mercado', '', dia(antes, 12));
@@ -347,6 +432,7 @@
     VERSION: VERSION, SIMBOLO: SIMBOLO, uid: uid, hoyISO: hoyISO, mesDe: mesDe, moverMes: moverMes,
     nombreMes: nombreMes, etiquetaDia: etiquetaDia, fechaCorta: fechaCorta, parseMonto: parseMonto,
     parseCambio: parseCambio, partes: partes, fmt: fmt, aTexto: aTexto, aSoles: aSoles,
+    convertir: convertir, enCuenta: enCuenta, cuentaDe: cuentaDe, usosCuenta: usosCuenta, saldos: saldos,
     estadoInicial: estadoInicial, nombreCat: nombreCat, usosCat: usosCat, resumenMes: resumenMes,
     diasDelMes: diasDelMes, presupuestoMes: presupuestoMes, progresoMeta: progresoMeta,
     validar: validar, aCSV: aCSV, demo: demo

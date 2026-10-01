@@ -43,13 +43,15 @@ test('fechas en hora local', () => {
 function base() {
   const e = L.estadoInicial();
   e.movs = [
-    { id: '1', tipo: 'ingreso', monto: 500000, mon: 'PEN', cat: 'i-sueldo', nota: '', fecha: '2026-10-01', creado: 1 },
-    { id: '2', tipo: 'ingreso', monto: 10000, mon: 'USD', tc: 3.5, cat: 'i-honorarios', nota: '', fecha: '2026-10-02', creado: 2 },
-    { id: '3', tipo: 'gasto', monto: 30000, mon: 'PEN', cat: 'c-comida', nota: '', fecha: '2026-10-03', creado: 3 },
-    { id: '4', tipo: 'gasto', monto: 2000, mon: 'USD', tc: 4, cat: 'c-comida', nota: 'a "prueba"; rara', fecha: '2026-10-03', creado: 4 },
-    { id: '5', tipo: 'gasto', monto: 10000, mon: 'PEN', cat: 'c-ocio', nota: '', fecha: '2026-10-05', creado: 5 },
-    { id: '6', tipo: 'gasto', monto: 99900, mon: 'PEN', cat: 'c-ocio', nota: '', fecha: '2026-09-30', creado: 6 }
+    { id: '1', tipo: 'ingreso', monto: 500000, mon: 'PEN', tc: 3.5, cuenta: 'k-bcp', cat: 'i-sueldo', nota: '', fecha: '2026-10-01', creado: 1 },
+    { id: '2', tipo: 'ingreso', monto: 10000, mon: 'USD', tc: 3.5, cuenta: 'k-paypal', cat: 'i-honorarios', nota: '', fecha: '2026-10-02', creado: 2 },
+    { id: '3', tipo: 'gasto', monto: 30000, mon: 'PEN', tc: 3.5, cuenta: 'k-scotiabank', cat: 'c-comida', nota: '', fecha: '2026-10-03', creado: 3 },
+    // US$ 20 pagados con BCP: el banco cobró S/ 80.00
+    { id: '4', tipo: 'gasto', monto: 2000, mon: 'USD', tc: 3.5, cuenta: 'k-bcp', monCuenta: 'PEN', cobrado: 8000, cat: 'c-comida', nota: 'a "prueba"; rara', fecha: '2026-10-03', creado: 4 },
+    { id: '5', tipo: 'gasto', monto: 10000, mon: 'PEN', tc: 3.5, cuenta: 'k-bcp', cat: 'c-ocio', nota: '', fecha: '2026-10-05', creado: 5 },
+    { id: '6', tipo: 'gasto', monto: 99900, mon: 'PEN', tc: 3.5, cuenta: 'k-bcp', cat: 'c-ocio', nota: '', fecha: '2026-09-30', creado: 6 }
   ];
+  e.cuentas[0].inicial = 100000;
   e.topes = { 'c-comida': 35000, 'c-ocio': 20000 };
   e.metas = [{
     id: 'g', nombre: 'Viaje', objetivo: 100000, mon: 'USD', fecha: '2027-03-15',
@@ -146,14 +148,68 @@ test('respaldo: rechaza lo ajeno y descarta filas dañadas', () => {
 test('aCSV: orden por fecha, comillas y ahorro incluido', () => {
   const csv = L.aCSV(base());
   const lineas = csv.replace('﻿', '').trim().split('\r\n');
-  assert.equal(lineas[0], 'Fecha;Tipo;Categoría;Nota;Moneda;Monto;Tipo de cambio;Monto en soles');
+  assert.equal(lineas[0], 'Fecha;Tipo;Cuenta;Categoría;Nota;Moneda;Monto;Tipo de cambio;Monto en soles');
   assert.equal(lineas.length, 1 + 6 + 3);
-  assert.ok(lineas[1].startsWith('2026-09-10;Ahorro;Viaje'));
-  assert.ok(csv.includes('2026-10-03;Gasto;Comida;"a ""prueba""; rara";USD;20.00;4;80.00'));
-  assert.ok(csv.includes('2026-10-06;Retiro de ahorro;Viaje;;USD;-50.00;3.5;-175.00'));
+  assert.ok(lineas[1].startsWith('2026-09-10;Ahorro;;Viaje'));
+  assert.ok(csv.includes('2026-10-03;Gasto;BCP;Comida;"a ""prueba""; rara";USD;20.00;3.5;80.00'));
+  assert.ok(csv.includes('2026-10-06;Retiro de ahorro;;Viaje;;USD;-50.00;3.5;-175.00'));
 });
 
 test('demo: es un estado válido', () => {
   const d = L.demo('2026-10-01');
   assert.deepEqual(L.validar(JSON.parse(JSON.stringify(d))).estado, d);
+});
+
+test('saldos: cada cuenta en su moneda y el total en soles', () => {
+  const e = base();
+  e.movs.push({ id: 't', tipo: 'transferencia', monto: 5000, mon: 'USD', tc: 3.5, cuenta: 'k-paypal', destino: 'k-bcp', llega: 17200, cat: '', nota: '', fecha: '2026-10-06', creado: 7 });
+  const s = L.saldos(e);
+  const de = id => s.filas.find(f => f.id === id).saldo;
+  assert.equal(de('k-bcp'), 100000 + 500000 - 8000 - 10000 - 99900 + 17200);
+  assert.equal(de('k-scotiabank'), -30000);
+  assert.equal(de('k-paypal'), 10000 - 5000);
+  assert.equal(de('k-efectivo'), 0);
+  assert.equal(s.USD, 5000);
+  assert.equal(s.total, s.PEN + Math.round(5000 * e.tc));
+  // la transferencia no cuenta como ingreso ni gasto
+  assert.equal(L.resumenMes(e, '2026-10').queda, L.resumenMes(base(), '2026-10').queda);
+  assert.equal(L.diasDelMes(e, '2026-10', 'todo', 'k-paypal').reduce((n, d) => n + d.movs.length, 0), 2);
+});
+
+test('dólares pagados desde una cuenta en soles: vale lo que cobró el banco', () => {
+  const m = { tipo: 'gasto', monto: 2000, mon: 'USD', tc: 3.5, monCuenta: 'PEN', cobrado: 7183 };
+  assert.equal(L.aSoles(m), 7183);
+  assert.equal(L.enCuenta(m), 7183);
+  assert.equal(L.aSoles({ monto: 2000, mon: 'USD', tc: 3.5 }), 7000);
+  assert.equal(L.enCuenta({ monto: 2000, mon: 'USD', tc: 3.5 }), 2000);
+  assert.equal(L.convertir(2000, 'USD', 'PEN', 3.5), 7000);
+  assert.equal(L.convertir(7000, 'PEN', 'USD', 3.5), 2000);
+});
+
+test('respaldo de la versión anterior (sin cuentas) se migra', () => {
+  const r = L.validar({
+    v: 1, tc: 3.6, movs: [
+      { id: 'a', tipo: 'gasto', monto: 1850, mon: 'PEN', cat: 'c-comida', nota: '', fecha: '2026-10-01', creado: 1 },
+      { id: 'b', tipo: 'gasto', monto: 2000, mon: 'USD', tc: 3.6, cat: 'c-suscripciones', nota: '', fecha: '2026-10-01', creado: 2 }
+    ]
+  });
+  assert.equal(r.ok, true);
+  assert.equal(r.estado.v, 2);
+  assert.deepEqual(r.estado.cuentas.map(c => c.nombre), ['BCP', 'Scotiabank', 'PayPal', 'Efectivo']);
+  assert.equal(r.estado.movs[0].cuenta, 'k-bcp');
+  assert.equal(r.estado.movs[1].cobrado, 7200);
+  assert.equal(r.estado.movs[1].estimado, true);
+  assert.equal(L.saldos(r.estado).filas[0].saldo, -1850 - 7200);
+});
+
+test('respaldo: transferencias mal formadas se descartan', () => {
+  const r = L.validar({
+    v: 2, movs: [
+      { tipo: 'transferencia', monto: 100, mon: 'PEN', cuenta: 'k-bcp', destino: 'k-bcp', fecha: '2026-10-01' },
+      { tipo: 'transferencia', monto: 100, mon: 'PEN', cuenta: 'k-bcp', destino: 'k-nada', fecha: '2026-10-01' },
+      { tipo: 'transferencia', monto: 35000, mon: 'PEN', cuenta: 'k-bcp', destino: 'k-paypal', fecha: '2026-10-01', tc: 3.5 }
+    ]
+  });
+  assert.equal(r.estado.movs.length, 1);
+  assert.equal(r.estado.movs[0].llega, 10000);
 });
