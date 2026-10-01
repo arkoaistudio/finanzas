@@ -112,7 +112,7 @@ if (location.hostname !== '127.0.0.1' && location.hostname !== 'localhost') thro
     await espera(500);
     const claves = await W().caches.keys();
     const n = claves.length ? (await (await W().caches.open(claves[0])).keys()).length : 0;
-    ok('service worker activo y con los 10 archivos guardados', reg && claves[0] === 'finanzas-1' && n === 10, { claves, n });
+    ok('service worker activo y con los 10 archivos guardados', reg && claves[0] === 'finanzas-2' && n === 10, { claves, n });
 
     ok('sin errores de JavaScript', !q('#aviso.fallo') || q('#aviso').hidden, q('#aviso').textContent);
   } catch (err) {

@@ -52,8 +52,9 @@ Tiene que estar publicada con https (GitHub Pages sirve y es gratis).
   cambiar el tipo de cambio no mueve los meses pasados.
 - **Actualizar la app.** Al publicar cambios, subir el número de `CACHE` en
   `sw.js`. En el celular el cambio aparece la segunda vez que se abre.
-- **Ícono.** Sale de `iconos/icono.html` con una captura de Edge sin ventana
-  (`--headless=new --screenshot`) a 180, 192 y 512 px.
+- **Ícono.** Sale de `iconos/icono.html` con una captura de Edge sin ventana a 1024 px,
+  reducida después a 180, 192 y 512. Ojo: Edge sin ventana no baja de ~500 px de ancho;
+  capturar directo a 180 saca el ícono recortado.
 - Montos siempre en céntimos enteros. Los topes del presupuesto van en soles
   y son los mismos todos los meses.
 
