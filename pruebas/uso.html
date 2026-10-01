@@ -1,0 +1,123 @@
+<!doctype html><meta charset="utf-8"><iframe id="f" style="width:390px;height:844px;border:0"></iframe>
+<script>
+const R = [];
+const ok = (nombre, cond, extra) => R.push({ nombre, ok: !!cond, extra: cond ? undefined : extra });
+const espera = ms => new Promise(r => setTimeout(r, ms));
+const f = document.getElementById('f');
+const cargar = url => new Promise(r => { f.onload = () => setTimeout(r, 150); f.src = url; });
+const W = () => f.contentWindow, D = () => f.contentDocument;
+const q = s => D().querySelector(s);
+const est = () => JSON.parse(W().localStorage.getItem('finanzas.v1'));
+const pon = (nombre, valor) => { q('#hoja [name="' + nombre + '"]').value = valor; };
+const radio = (nombre, valor) => { q('#hoja input[name="' + nombre + '"][value="' + valor + '"]').click(); };
+const enviar = () => q('#hoja form').requestSubmit();
+const accion = (a, extra) => q('[data-accion="' + a + '"]' + (extra || '')).click();
+const ir = async h => { W().location.hash = h; await espera(60); };
+
+if (location.hostname !== '127.0.0.1' && location.hostname !== 'localhost') throw new Error('La prueba de uso solo corre en 127.0.0.1');
+(async () => {
+  try {
+    localStorage.clear();
+    await cargar('/index.html');
+    W().confirm = () => true;
+    ok('arranca vacío', q('.vacio') && !W().localStorage.getItem('finanzas.v1'));
+
+    accion('nuevo-mov');
+    ok('abre la hoja y enfoca el monto', !q('#hoja').hidden && D().activeElement.name === 'monto');
+    enviar();
+    ok('monto vacío da error', q('#hoja .error'), 'sin error');
+    pon('monto', '18,5'); pon('nota', 'Menú <b>');
+    enviar();
+    let e = est();
+    ok('guarda gasto en soles', e.movs.length === 1 && e.movs[0].monto === 1850 && e.movs[0].mon === 'PEN' && e.movs[0].cat === 'c-comida', e.movs);
+    ok('la hoja se cierra', q('#hoja').hidden);
+    ok('la nota se escapa', q('#vista').innerHTML.includes('Menú &lt;b&gt;'));
+
+    accion('nuevo-mov');
+    pon('monto', '1,200.00');
+    radio('tipo', 'ingreso');
+    ok('cambia a categorías de ingreso y conserva el monto', q('#hoja input[name=cat]').value === 'i-sueldo' && q('#hoja [name=monto]').value === '1,200.00');
+    ok('sin dólares no pide cambio', !q('#hoja [name=tc]'));
+    radio('mon', 'USD');
+    ok('con dólares pide cambio', q('#hoja [name=tc]') && q('#hoja [name=tc]').value === '3.5');
+    pon('tc', '3,6');
+    enviar();
+    e = est();
+    ok('guarda ingreso en dólares con su cambio', e.movs.length === 2 && e.movs[1].monto === 120000 && e.movs[1].tc === 3.6 && e.tc === 3.6, e.movs[1]);
+    ok('resumen: queda 4,301.50', q('.num.grande').textContent === 'S/4,301.50', q('.num.grande').textContent);
+
+    accion('editar-mov', '[data-id="' + e.movs[0].id + '"]');
+    ok('editar trae el monto', q('#hoja [name=monto]').value === '18.50');
+    pon('monto', '20');
+    enviar();
+    e = est();
+    ok('editar no duplica', e.movs.length === 2 && e.movs[0].monto === 2000, e.movs);
+
+    await ir('presupuesto');
+    accion('tope', '[data-id="c-comida"]');
+    pon('monto', '500'); enviar();
+    ok('guarda tope', est().topes['c-comida'] === 50000);
+    ok('presupuesto: disponible 480', q('.num.grande').textContent === 'S/480.00', q('.num.grande').textContent);
+
+    await ir('metas');
+    accion('nueva-meta');
+    pon('nombre', 'Viaje'); pon('monto', '1000'); radio('mon', 'USD');
+    ok('meta: conserva lo escrito al cambiar moneda', q('#hoja [name=nombre]').value === 'Viaje');
+    enviar();
+    accion('aporte', '[data-signo="1"]');
+    pon('monto', '100'); enviar();
+    accion('aporte', '[data-signo="-1"]');
+    pon('monto', '500'); enviar();
+    ok('no deja retirar de más', q('#hoja .error'));
+    pon('monto', '40'); enviar();
+    e = est();
+    ok('meta con aporte y retiro', e.metas.length === 1 && e.metas[0].aportes.map(a => a.monto).join() === '10000,-4000' && e.metas[0].aportes[0].tc === 3.6, e.metas);
+    ok('meta muestra 6%', q('.pct').textContent === '6%', q('.pct').textContent);
+    accion('detalle-meta');
+    ok('detalle lista 2', D().querySelectorAll('#hoja [data-accion=borrar-aporte]').length === 2);
+    accion('borrar-aporte');
+    ok('borra un aporte', est().metas[0].aportes.length === 1);
+    accion('cerrar');
+
+    await ir('resumen');
+    ok('resumen descuenta el ahorro', q('.num.grande').textContent !== 'S/4,300.00', q('.num.grande').textContent);
+
+    await ir('ajustes');
+    accion('cat', '[data-tipo="gasto"]:not([data-id])');
+    pon('nombre', 'comida'); enviar();
+    ok('no deja categoría repetida', q('#hoja .error'));
+    pon('nombre', 'Mascota'); enviar();
+    ok('agrega categoría', est().categorias.gasto.length === 11);
+    accion('cat', '[data-id="c-comida"]');
+    ok('categoría usada no se borra', !q('#hoja [data-accion=borrar-cat]'));
+    accion('cerrar');
+    accion('cambio'); pon('tc', '3.75'); enviar();
+    ok('cambia el tipo de cambio sin tocar lo anotado', est().tc === 3.75 && est().movs[1].tc === 3.6);
+
+    await cargar('/index.html?x=' + Date.now() + '#movimientos');
+    W().confirm = () => true;
+    ok('tras recargar siguen los datos', D().querySelectorAll('#vista [data-accion=editar-mov]').length === 2);
+    accion('filtro', '[data-f="ingreso"]');
+    ok('filtro de ingresos', D().querySelectorAll('#vista [data-accion=editar-mov]').length === 1);
+    accion('editar-mov'); accion('borrar-mov');
+    ok('elimina movimiento', est().movs.length === 1);
+    accion('mes', '[data-d="-1"]');
+    ok('mes anterior vacío', q('.vacio') && q('#cabecera h1').textContent === 'Setiembre', q('#cabecera h1').textContent);
+
+    // respaldo: lo que se exporta se puede volver a cargar igual
+    const v = W().Logica.validar(JSON.parse(JSON.stringify(est())));
+    ok('el estado guardado pasa la validación', v.ok && JSON.stringify(v.estado) === JSON.stringify(est()));
+
+    const reg = await Promise.race([W().navigator.serviceWorker.ready, espera(6000)]);
+    await espera(500);
+    const claves = await W().caches.keys();
+    const n = claves.length ? (await (await W().caches.open(claves[0])).keys()).length : 0;
+    ok('service worker activo y con los 10 archivos guardados', reg && claves[0] === 'finanzas-1' && n === 10, { claves, n });
+
+    ok('sin errores de JavaScript', !q('#aviso.fallo') || q('#aviso').hidden, q('#aviso').textContent);
+  } catch (err) {
+    ok('la prueba corrió completa', false, String(err && err.stack || err));
+  }
+  await fetch('/_resultado', { method: 'POST', body: JSON.stringify(R) });
+})();
+</script>
