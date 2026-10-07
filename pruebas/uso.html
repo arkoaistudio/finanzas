@@ -244,6 +244,25 @@ if (location.hostname !== '127.0.0.1' && location.hostname !== 'localhost') thro
     e = est();
     ok('borrar el gasto se lleva sus deudas pero no los pagos', e.movs.length === movsAntes2 && !e.deudas.some(d => d.mov === taxi.id) && e.deudas.filter(d => d.persona === 'luis').length === 1);
 
+    // editar la lista de personas: renombrar, juntar dos y eliminar
+    await ir('#deudas');
+    accion('persona', '[data-id="luis"]');
+    accion('editar-persona');
+    ok('la hoja de editar trae el nombre y el botón de eliminar', q('#hoja [name=nombre]').value === 'luis' && q('#hoja [data-accion=borrar-persona]'));
+    pon('nombre', '');
+    enviar();
+    ok('un nombre vacío da error', q('#hoja .error'));
+    pon('nombre', 'Luisa');
+    enviar();
+    ok('renombrar cambia todos sus apuntes y vuelve a su ficha', est().deudas.every(d => d.persona !== 'luis') && est().deudas.some(d => d.persona === 'Luisa') && q('#hoja .tope h2').textContent === 'Luisa', q('#hoja .tope h2') && q('#hoja .tope h2').textContent);
+    accion('editar-persona');
+    pon('nombre', 'andrea');
+    enviar();
+    ok('con el nombre de otra persona se juntan en una', est().deudas.every(d => d.persona.toLowerCase() === 'andrea') && qq('#vista [data-accion=persona]').length === 1, qq('#vista [data-accion=persona]').length);
+    accion('editar-persona');
+    accion('borrar-persona');
+    ok('eliminar borra su historial y el pago que entró a la cuenta se va con él', est().deudas.length === 0 && saldoBCP() === bcpAntes && !q('#hoja') .innerHTML, [est().deudas.length, saldoBCP(), bcpAntes]);
+
     await cargar('/index.html?x=' + Date.now() + '#movimientos');
     W().confirm = () => true;
     ok('tras recargar siguen los datos', qq('#vista [data-accion=editar-mov]').length === 4);

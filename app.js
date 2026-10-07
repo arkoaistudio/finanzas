@@ -559,6 +559,16 @@
         errorHoja() + '<div class="pie-hoja"><button class="btn prim ancho">Guardar</button>' +
         (hoja.id ? '<button type="button" class="btn peligro ancho" data-accion="borrar-deuda">Eliminar</button>' : '') + '</div></form>';
     },
+    'editar-persona': function () {
+      const f = persona(hoja.id);
+      const u = L.usoPersona(estado, f.clave);
+      return topeHoja('Editar persona') + '<form data-form="persona-nombre">' +
+        campoTexto('nombre', 'Nombre', hoja.d.nombre, 'maxlength="40"') +
+        '<p class="meta nota-hoja">Tiene ' + u.apuntes + (u.apuntes === 1 ? ' apunte' : ' apuntes') + (u.gastos ? ' y está en ' + u.gastos + (u.gastos === 1 ? ' gasto compartido' : ' gastos compartidos') : '') +
+        '. Al cambiar el nombre se cambia en todos. Si le pones el nombre de otra persona, las dos se juntan en una.</p>' +
+        errorHoja() + '<div class="pie-hoja"><button class="btn prim ancho">Guardar</button>' +
+        '<button type="button" class="btn peligro ancho" data-accion="borrar-persona">Eliminar a ' + esc(f.nombre) + '</button></div></form>';
+    },
     persona: function () {
       const f = persona(hoja.id);
       const meDebe = f.saldo.PEN > 0 || f.saldo.USD > 0, leDebo = f.saldo.PEN < 0 || f.saldo.USD < 0;
@@ -566,7 +576,8 @@
       let h = topeHoja(esc(f.nombre)) + '<div class="cuerpo"><section class="celda"><span class="eyebrow">' + titulo + '</span>' +
         '<div class="saldo-persona">' + (f.pendiente ? saldoPersona(f) : '<span class="meta">No queda nada pendiente.</span>') + '</div>' +
         '<div class="acciones">' + (f.pendiente ? '<button class="btn prim" data-accion="saldar" data-id="' + esc(f.clave) + '">Saldar</button>' : '') +
-        '<button class="btn sec" data-accion="nueva-deuda" data-persona="' + esc(f.nombre) + '">Anotar</button></div></section>' +
+        '<button class="btn sec" data-accion="nueva-deuda" data-persona="' + esc(f.nombre) + '">Anotar</button>' +
+        '<button class="btn sec" data-accion="editar-persona" data-id="' + esc(f.clave) + '">Editar</button></div></section>' +
         (f.pendiente ? '<div class="encabezado"><span class="eyebrow">Lo que falta</span></div><div class="lista">' + L.abiertos(f).map(function (x) {
           const a = x.apunte, parcial = Math.abs(x.resto) !== Math.abs(a.monto);
           return '<div class="fila"><span class="izq"><b>' + (a.nota ? esc(a.nota) : 'Sin detalle') + '</b><span class="meta">' +
@@ -805,6 +816,18 @@
       guardar(); cerrar(); pintar(); aviso('Apunte eliminado');
     },
     persona: function (d) { abrir({ tipo: 'persona', id: d.id }); },
+    'editar-persona': function (d) { abrir({ tipo: 'editar-persona', id: d.id, d: { nombre: persona(d.id).nombre } }); },
+    'borrar-persona': function () {
+      const f = persona(hoja.id), u = L.usoPersona(estado, f.clave);
+      const texto = 'Se borra a ' + f.nombre + ' con sus ' + u.apuntes + (u.apuntes === 1 ? ' apunte' : ' apuntes') + '.' +
+        (f.pendiente ? '\n\nTodavía queda saldo pendiente: ' + L.textoSaldo({ PEN: Math.abs(f.saldo.PEN), USD: Math.abs(f.saldo.USD) }) + '.' : '') +
+        (u.gastos ? '\n\n' + (u.gastos === 1 ? 'Un gasto compartido con esta persona pasa' : u.gastos + ' gastos compartidos con esta persona pasan') + ' a contar completos como tuyos.' : '') +
+        (u.enCuentas ? '\n\nSus pagos que entraron a una cuenta se quitan y ese saldo vuelve a bajar.' : '') +
+        '\n\nNo se puede deshacer. ¿Borrar?';
+      if (!confirm(texto)) return;
+      L.eliminarPersona(estado, f.clave);
+      guardar(); cerrar(); pintar(); aviso('Persona eliminada');
+    },
 
     cat: function (d) {
       const c = d.id ? estado.categorias[d.tipo].filter(function (x) { return x.id === d.id; })[0] : null;
@@ -938,6 +961,16 @@
       g.aportes.push(a);
       const retiro = hoja.signo < 0;
       guardar(); cerrar(); pintar(); aviso(retiro ? 'Retiro anotado' : 'Guardado');
+    },
+    'persona-nombre': function (fd) {
+      const viejo = persona(hoja.id);
+      const nuevo = String(fd.get('nombre') || '').trim();
+      if (!nuevo) return fallo('Ponle un nombre.');
+      const otra = L.claveDe(nuevo) !== viejo.clave ? persona(L.claveDe(nuevo)) : null;
+      if (otra && !confirm('Ya existe ' + otra.nombre + '. ¿Juntar a ' + viejo.nombre + ' con ' + otra.nombre + ' en una sola persona?')) return;
+      const r = L.renombrarPersona(estado, viejo.clave, nuevo);
+      if (!r.ok) return fallo(r.error);
+      guardar(); pintar(); abrir({ tipo: 'persona', id: r.clave }); aviso(r.junta ? 'Personas juntadas' : 'Guardado');
     },
     deuda: function (fd) {
       const nombre = String(fd.get('persona') || '').trim();

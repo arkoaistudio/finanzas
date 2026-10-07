@@ -354,3 +354,41 @@ test('gasto compartido: pasa por el respaldo y descarta lo mal formado', () => {
   assert.equal(r.deudas.filter(d => d.id === 'd3')[0].cuenta, undefined);  // cuenta en otra moneda: se ignora
   assert.equal(r.deudas.filter(d => d.id === 'd4')[0].cuenta, 'k-efectivo');
 });
+
+test('personas: renombrar cambia apuntes y gastos, y juntar dos nombres los une', () => {
+  const e = L.estadoInicial();
+  const m = { id: 'g1', tipo: 'gasto', monto: 2500, mon: 'PEN', tc: 3.5, cuenta: 'k-bcp', cat: 'c-transporte', nota: 'Taxi', fecha: '2026-10-05', creado: 5,
+    partes: [{ persona: 'Andra', monto: 1250 }] };
+  e.movs.push(m);
+  L.sincronizarPartes(e, m);
+  e.deudas.push({ id: 'x', persona: 'Andrea', monto: 500, mon: 'PEN', nota: '', fecha: '2026-10-06', pago: false, creado: 7 });
+  assert.equal(L.deudasPorPersona(e).length, 2);
+  const r = L.renombrarPersona(e, 'andra', 'Andrea');
+  assert.equal(r.ok, true);
+  assert.equal(r.junta, true);
+  assert.equal(L.deudasPorPersona(e).length, 1);
+  assert.equal(L.deudasPorPersona(e)[0].saldo.PEN, 1750);
+  assert.equal(m.partes[0].persona, 'Andrea');
+  assert.equal(L.renombrarPersona(e, 'andrea', '   ').ok, false);
+  assert.equal(L.renombrarPersona(e, 'andrea', 'ANDREA').junta, false);   // solo cambia la grafía
+});
+
+test('personas: eliminar borra el historial y devuelve el gasto a ser mío', () => {
+  const e = L.estadoInicial();
+  e.cuentas[0].inicial = 10000;
+  const m = { id: 'g1', tipo: 'gasto', monto: 2500, mon: 'PEN', tc: 3.5, cuenta: 'k-bcp', cat: 'c-transporte', nota: 'Taxi', fecha: '2026-10-05', creado: 5,
+    partes: [{ persona: 'Andrea', monto: 1000 }, { persona: 'Luis', monto: 500 }] };
+  e.movs.push(m);
+  L.sincronizarPartes(e, m);
+  e.deudas.push({ id: 'p', persona: 'Luis', monto: -500, mon: 'PEN', nota: '', fecha: '2026-10-06', pago: true, creado: 9, cuenta: 'k-bcp' });
+  assert.deepEqual(L.usoPersona(e, 'luis'), { apuntes: 2, gastos: 1, enCuentas: 1 });
+  assert.equal(L.saldos(e).filas[0].saldo, 10000 - 2500 + 500);
+  L.eliminarPersona(e, 'luis');
+  assert.deepEqual(m.partes, [{ persona: 'Andrea', monto: 1000 }]);
+  assert.equal(L.deudasPorPersona(e).length, 1);
+  assert.equal(L.saldos(e).filas[0].saldo, 10000 - 2500);   // el pago que entró a la cuenta se va con él
+  L.eliminarPersona(e, 'andrea');
+  assert.equal(m.partes, undefined);
+  assert.equal(L.propio(m), 2500);
+  assert.equal(e.deudas.length, 0);
+});

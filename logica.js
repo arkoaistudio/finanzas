@@ -382,6 +382,37 @@
     }
   }
 
+  /* Cambia el nombre de una persona en todos sus apuntes y en los gastos compartidos.
+     Si el nombre nuevo ya es de otra persona, las dos quedan juntas en una (sirve para
+     arreglar un nombre mal escrito que ya se usó en varios sitios). */
+  function renombrarPersona(estado, clave, nombre) {
+    const nuevo = String(nombre || '').trim().slice(0, 40);
+    if (!nuevo) return { ok: false, error: 'Ponle un nombre.' };
+    const junta = claveDe(nuevo) !== clave && estado.deudas.some(function (d) { return claveDe(d.persona) === claveDe(nuevo); });
+    for (const d of estado.deudas) if (claveDe(d.persona) === clave) d.persona = nuevo;
+    for (const m of estado.movs) for (const p of m.partes || []) if (claveDe(p.persona) === clave) p.persona = nuevo;
+    return { ok: true, junta: junta, clave: claveDe(nuevo) };
+  }
+
+  // Lo que se lleva borrar a una persona, para avisarlo antes.
+  function usoPersona(estado, clave) {
+    const r = { apuntes: 0, gastos: 0, enCuentas: 0 };
+    for (const d of estado.deudas) if (claveDe(d.persona) === clave) { r.apuntes++; if (d.cuenta) r.enCuentas++; }
+    for (const m of estado.movs) if ((m.partes || []).some(function (p) { return claveDe(p.persona) === clave; })) r.gastos++;
+    return r;
+  }
+
+  /* Borra a una persona con su historial. En los gastos compartidos donde estaba
+     se quita su parte; si era la única, el gasto vuelve a ser todo mío. */
+  function eliminarPersona(estado, clave) {
+    estado.deudas = estado.deudas.filter(function (d) { return claveDe(d.persona) !== clave; });
+    for (const m of estado.movs) {
+      if (!m.partes) continue;
+      m.partes = m.partes.filter(function (p) { return claveDe(p.persona) !== clave; });
+      if (!m.partes.length) delete m.partes;
+    }
+  }
+
   // Lo que me deben y lo que debo, sumado por moneda.
   function totalDeudas(estado) {
     const r = { meDeben: { PEN: 0, USD: 0 }, debo: { PEN: 0, USD: 0 } };
@@ -594,6 +625,7 @@
     diasDelMes: diasDelMes, presupuestoMes: presupuestoMes, progresoMeta: progresoMeta,
     tipoDeuda: tipoDeuda, ROTULO_DEUDA: ROTULO_DEUDA, deudasPorPersona: deudasPorPersona, abiertos: abiertos, propio: propio, aSolesPropio: aSolesPropio,
     repartir: repartir, sincronizarPartes: sincronizarPartes,
+    renombrarPersona: renombrarPersona, usoPersona: usoPersona, eliminarPersona: eliminarPersona,
     totalDeudas: totalDeudas, textoSaldo: textoSaldo, claveDe: claveDe,
     validar: validar, aCSV: aCSV, demo: demo
   };
