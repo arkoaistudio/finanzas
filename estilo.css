@@ -259,3 +259,10 @@ a.chip { font-size: 10.5px; font-weight: 500; letter-spacing: .09em; text-transf
   background: var(--tinta); color: var(--fondo); font-size: 13.5px;
 }
 #aviso.fallo { background: var(--rojo); bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 12px); white-space: pre-wrap; }
+
+/* personas: lo que me deben va en verde cuero, lo que debo en rojo */
+.por-cobrar { color: var(--cuero); }
+.dos-col { grid-template-columns: 1fr 1fr; }
+.meta-grande { display: block; margin-top: 8px; font-size: 17px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.saldo-persona { margin: 10px 0 4px; font-size: 26px; font-weight: 300; letter-spacing: -.02em; }
+.saldo-persona .der { text-align: left; font-size: inherit; display: block; }

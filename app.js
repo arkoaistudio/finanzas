@@ -6,7 +6,7 @@
   const L = window.Logica;
   const CLAVE = 'finanzas.v1';
   const DEMO = /[?&]demo\b/.test(location.search);   // datos de muestra, no guarda
-  const VISTAS = ['resumen', 'movimientos', 'presupuesto', 'metas', 'ajustes'];
+  const VISTAS = ['resumen', 'movimientos', 'presupuesto', 'metas', 'deudas', 'ajustes'];
   const DIAS_SIN_RESPALDO = 14;
 
   const $ = function (s, r) { return (r || document).querySelector(s); };
@@ -113,6 +113,37 @@
       (s.USD ? 'En soles, con ' + L.fmt(s.USD, 'USD') + ' al cambio de ' + tcTexto() : 'En soles') + '</span></span>' +
       '<span class="der' + (s.total < 0 ? ' negativo' : '') + '">' + L.fmt(s.total, 'PEN') + '</span></div></div>';
   }
+  // Saldo de una persona: cada moneda en su línea, verde si me debe y rojo si le debo.
+  function saldoPersona(f) {
+    if (!f.pendiente) return '<span class="der neutro">Saldado</span>';
+    const partes = [];
+    for (const mon of ['PEN', 'USD']) {
+      const v = f.saldo[mon];
+      if (!v) continue;
+      partes.push('<span class="' + (v > 0 ? 'por-cobrar' : 'negativo') + '">' + (v > 0 ? '+ ' : '') + L.fmt(v, mon) + '</span>');
+    }
+    return '<span class="der">' + partes.join('<br>') + '</span>';
+  }
+  // Debajo del nombre: de qué es lo que falta (los dos últimos conceptos sin pagar).
+  function motivosPersona(f) {
+    if (!f.pendiente) return f.apuntes.length + (f.apuntes.length === 1 ? ' apunte' : ' apuntes');
+    const notas = L.abiertos(f).filter(function (x) { return x.apunte.nota; }).slice(0, 2).map(function (x) { return x.apunte.nota; });
+    return notas.length ? notas.join(' · ') : 'Sin detalle';
+  }
+  function filaPersona(f) {
+    return '<button class="fila" data-accion="persona" data-id="' + esc(f.clave) + '"><span class="izq"><b>' + esc(f.nombre) +
+      '</b><span class="meta">' + esc(motivosPersona(f)) + '</span></span>' + saldoPersona(f) + '</button>';
+  }
+  function seccionDeudas() {
+    const pendientes = L.deudasPorPersona(estado).filter(function (f) { return f.pendiente; });
+    const h = '<div class="encabezado"><span class="eyebrow">Por cobrar y por pagar</span>' +
+      '<a class="eyebrow enlace" href="#deudas">' + (pendientes.length ? 'Ver todo' : 'Anotar') + '</a></div><div class="lista">';
+    if (!pendientes.length) {
+      return h + '<div class="fila"><span class="izq"><span class="meta libre">Nadie te debe ni le debes nada. ' +
+        'Si compartes un taxi, anótalo acá para acordarte.</span></span></div></div>';
+    }
+    return h + pendientes.slice(0, 3).map(filaPersona).join('') + '</div>';
+  }
   function vistaActual() {
     const h = location.hash.replace('#', '');
     return VISTAS.indexOf(h) >= 0 ? h : 'resumen';
@@ -126,9 +157,9 @@
 
   function pintarCabecera(v) {
     let h;
-    if (v === 'ajustes') {
+    if (v === 'ajustes' || v === 'deudas') {
       h = '<a class="cuadro" href="#resumen" style="border-left:0;border-right:1px solid var(--regla)" aria-label="Volver">' + ICO.izq + '</a>' +
-        '<div class="titulo"><span class="eyebrow gris">Finanzas</span><h1>Ajustes</h1></div>';
+        '<div class="titulo"><span class="eyebrow gris">Finanzas</span><h1>' + (v === 'deudas' ? 'Personas' : 'Ajustes') + '</h1></div>';
     } else if (v === 'metas') {
       h = '<div class="titulo"><span class="eyebrow gris">Ahorro</span><h1>Metas</h1></div>' +
         '<a class="cuadro" href="#ajustes" aria-label="Ajustes">' + ICO.ajustes + '</a>';
@@ -177,9 +208,9 @@
     if (!r.n) {
       return h + '<section class="vacio"><span class="eyebrow gris">Sin movimientos</span>' +
         '<p>Todavía no hay nada anotado en este mes.</p>' +
-        '<span class="meta">Toca el botón + de abajo para registrar un gasto o un ingreso.</span></section>' + seccionCuentas();
+        '<span class="meta">Toca el botón + de abajo para registrar un gasto o un ingreso.</span></section>' + seccionCuentas() + seccionDeudas();
     }
-    h += seccionCuentas();
+    h += seccionCuentas() + seccionDeudas();
 
     if (r.porCategoria.length) {
       h += '<div class="encabezado"><span class="eyebrow">Gasto por categoría</span>' +
@@ -277,6 +308,27 @@
         '<button class="btn sec" data-accion="detalle-meta" data-id="' + esc(g.id) + '">Detalle</button></div></section>';
     });
     return h + '<div class="celda" style="border-bottom:0"><button class="btn sec ancho" data-accion="nueva-meta">Nueva meta</button></div>';
+  }
+
+  function vDeudas() {
+    const personas = L.deudasPorPersona(estado);
+    if (!personas.length) {
+      return '<section class="vacio"><span class="eyebrow gris">Sin apuntes</span>' +
+        '<p>Anota quién te debe y por qué.</p>' +
+        '<span class="meta">Un taxi compartido, una cena que pagaste por todos. Cuando te devuelvan la plata, la anotas y el saldo baja.</span>' +
+        '<div class="acciones"><button class="btn prim" data-accion="nueva-deuda">Nuevo apunte</button></div></section>';
+    }
+    const t = L.totalDeudas(estado);
+    const monto = function (saldo) { return L.textoSaldo(saldo).replace('Saldado', 'Nada'); };
+    let h = '<section class="reticula dos-col"><div class="celda"><span class="eyebrow">Te deben</span>' +
+      '<span class="meta-grande">' + monto(t.meDeben) + '</span></div>' +
+      '<div class="celda"><span class="eyebrow">Debes</span>' +
+      '<span class="meta-grande">' + monto(t.debo) + '</span></div></section>';
+    const pend = personas.filter(function (f) { return f.pendiente; });
+    const saldadas = personas.filter(function (f) { return !f.pendiente; });
+    if (pend.length) h += '<div class="encabezado"><span class="eyebrow">Pendiente</span></div><div class="lista">' + pend.map(filaPersona).join('') + '</div>';
+    if (saldadas.length) h += '<div class="encabezado"><span class="eyebrow gris">Saldadas</span></div><div class="lista">' + saldadas.map(filaPersona).join('') + '</div>';
+    return h + '<div class="celda" style="border-bottom:0"><button class="btn sec ancho" data-accion="nueva-deuda">Nuevo apunte</button></div>';
   }
 
   function vAjustes() {
@@ -436,6 +488,45 @@
       }
       return h + '<div class="pie-hoja"><button class="btn sec ancho" data-accion="editar-meta" data-id="' + esc(g.id) + '">Editar la meta</button></div></div>';
     },
+    deuda: function () {
+      const d = hoja.d;
+      const nombres = {};
+      estado.deudas.forEach(function (x) { nombres[L.claveDe(x.persona)] = x.persona; });
+      return topeHoja(hoja.id ? 'Editar apunte' : 'Nuevo apunte') + '<form data-form="deuda">' +
+        '<div class="campo">' + seg('tipo', [['medebe', 'Me debe'], ['ledebo', 'Le debo'], ['mepago', 'Me pagó'], ['lepague', 'Le pagué']], d.tipo, false) + '</div>' +
+        '<label class="campo"><span class="eyebrow">Persona</span><input type="text" name="persona" list="personas" autocomplete="off" ' +
+        'maxlength="40" placeholder="Andrea" value="' + esc(d.persona) + '"><datalist id="personas">' +
+        Object.keys(nombres).map(function (k) { return '<option value="' + esc(nombres[k]) + '">'; }).join('') + '</datalist></label>' +
+        campoMonto(d, 'Cuánto') +
+        '<div class="campo"><span class="eyebrow">Moneda</span>' + seg('mon', MONEDAS, d.mon, true) + '</div>' +
+        campoTexto('nota', 'De qué', d.nota, 'placeholder="Taxi al aeropuerto" maxlength="200"') +
+        campoFecha('fecha', 'Fecha', d.fecha) +
+        '<p class="meta nota-hoja">Es solo una libreta: no mueve el saldo de tus cuentas ni cuenta como ingreso o gasto.</p>' +
+        errorHoja() + '<div class="pie-hoja"><button class="btn prim ancho">Guardar</button>' +
+        (hoja.id ? '<button type="button" class="btn peligro ancho" data-accion="borrar-deuda">Eliminar</button>' : '') + '</div></form>';
+    },
+    persona: function () {
+      const f = persona(hoja.id);
+      const meDebe = f.saldo.PEN > 0 || f.saldo.USD > 0, leDebo = f.saldo.PEN < 0 || f.saldo.USD < 0;
+      const titulo = !f.pendiente ? 'Saldado' : meDebe && !leDebo ? 'Te debe' : leDebo && !meDebe ? 'Le debes' : 'Saldo';
+      let h = topeHoja(esc(f.nombre)) + '<div class="cuerpo"><section class="celda"><span class="eyebrow">' + titulo + '</span>' +
+        '<div class="saldo-persona">' + (f.pendiente ? saldoPersona(f) : '<span class="meta">No queda nada pendiente.</span>') + '</div>' +
+        '<div class="acciones">' + (f.pendiente ? '<button class="btn prim" data-accion="saldar" data-id="' + esc(f.clave) + '">Saldar</button>' : '') +
+        '<button class="btn sec" data-accion="nueva-deuda" data-persona="' + esc(f.nombre) + '">Anotar</button></div></section>' +
+        (f.pendiente ? '<div class="encabezado"><span class="eyebrow">Lo que falta</span></div><div class="lista">' + L.abiertos(f).map(function (x) {
+          const a = x.apunte, parcial = Math.abs(x.resto) !== Math.abs(a.monto);
+          return '<div class="fila"><span class="izq"><b>' + (a.nota ? esc(a.nota) : 'Sin detalle') + '</b><span class="meta">' +
+            L.fechaCorta(a.fecha) + (parcial ? ' · de ' + L.fmt(Math.abs(a.monto), a.mon) + ', ya pagó una parte' : '') + '</span></span>' +
+            '<span class="der ' + (x.resto > 0 ? 'por-cobrar' : 'negativo') + '">' + (x.resto > 0 ? '+ ' : '') + L.fmt(x.resto, x.mon) + '</span></div>';
+        }).join('') + '</div>' : '') +
+        '<div class="encabezado"><span class="eyebrow">Historial</span><span class="eyebrow gris">Toca para editar</span></div><div class="lista">';
+      h += f.apuntes.map(function (a) {
+        return '<button class="fila" data-accion="editar-deuda" data-id="' + esc(a.id) + '"><span class="izq"><b>' + L.ROTULO_DEUDA[L.tipoDeuda(a)] +
+          '</b><span class="meta">' + L.fechaCorta(a.fecha) + (a.nota ? ' · ' + esc(a.nota) : '') + '</span></span>' +
+          '<span class="der' + (a.pago ? ' neutro' : a.monto > 0 ? ' por-cobrar' : ' negativo') + '">' + (a.monto > 0 ? '+ ' : '') + L.fmt(a.monto, a.mon) + '</span></button>';
+      }).join('');
+      return h + '</div></div>';
+    },
     cat: function () {
       const usos = hoja.id ? L.usosCat(estado, hoja.id) : 0;
       const unica = estado.categorias[hoja.tipoCat].length <= 1;
@@ -460,6 +551,7 @@
     return c ? '≈ ' + L.aTexto(L.convertir(c, de, a, hoja.tc)) : 'Opcional';
   }
   function errorHoja() { return hoja.error ? '<p class="error">' + esc(hoja.error) + '</p>' : ''; }
+  function persona(clave) { return L.deudasPorPersona(estado).filter(function (f) { return f.clave === clave; })[0]; }
   function meta(id) { return estado.metas.filter(function (g) { return g.id === id; })[0]; }
 
   function abrir(h, enfocar) {
@@ -489,7 +581,7 @@
     const v = vistaActual();
     pintarCabecera(v);
     pintarBarra(v);
-    $('#vista').innerHTML = { resumen: vResumen, movimientos: vMovimientos, presupuesto: vPresupuesto, metas: vMetas, ajustes: vAjustes }[v]();
+    $('#vista').innerHTML = { resumen: vResumen, movimientos: vMovimientos, presupuesto: vPresupuesto, metas: vMetas, deudas: vDeudas, ajustes: vAjustes }[v]();
   }
 
   let relojAviso = 0;
@@ -611,6 +703,29 @@
       g.aportes = g.aportes.filter(function (x) { return x.id !== a.id; });
       guardar(); pintarHoja(); pintar();
     },
+
+    'nueva-deuda': function (d) {
+      abrir({ tipo: 'deuda', id: null, d: { tipo: 'medebe', persona: d.persona || '', monto: '', mon: 'PEN', nota: '', fecha: L.hoyISO() } },
+        d.persona ? 'monto' : 'persona');
+    },
+    'editar-deuda': function (d) {
+      const a = estado.deudas.filter(function (x) { return x.id === d.id; })[0];
+      if (!a) return;
+      abrir({ tipo: 'deuda', id: a.id, d: { tipo: L.tipoDeuda(a), persona: a.persona, monto: L.aTexto(a.monto), mon: a.mon, nota: a.nota || '', fecha: a.fecha } });
+    },
+    saldar: function (d) {
+      // lo que falta, en la moneda de mayor saldo, como pago en sentido contrario
+      const f = persona(d.id);
+      const mon = Math.abs(f.saldo.PEN) >= Math.abs(f.saldo.USD) * estado.tc ? 'PEN' : 'USD';
+      abrir({ tipo: 'deuda', id: null, d: { tipo: f.saldo[mon] > 0 ? 'mepago' : 'lepague', persona: f.nombre,
+        monto: L.aTexto(f.saldo[mon]), mon: mon, nota: '', fecha: L.hoyISO() } }, 'monto');
+    },
+    'borrar-deuda': function () {
+      if (!confirm('¿Eliminar este apunte?')) return;
+      estado.deudas = estado.deudas.filter(function (x) { return x.id !== hoja.id; });
+      guardar(); cerrar(); pintar(); aviso('Apunte eliminado');
+    },
+    persona: function (d) { abrir({ tipo: 'persona', id: d.id }); },
 
     cat: function (d) {
       const c = d.id ? estado.categorias[d.tipo].filter(function (x) { return x.id === d.id; })[0] : null;
@@ -737,6 +852,22 @@
       g.aportes.push(a);
       const retiro = hoja.signo < 0;
       guardar(); cerrar(); pintar(); aviso(retiro ? 'Retiro anotado' : 'Guardado');
+    },
+    deuda: function (fd) {
+      const nombre = String(fd.get('persona') || '').trim();
+      if (!nombre) return fallo('Ponle el nombre de la persona.');
+      const monto = L.parseMonto(fd.get('monto'));
+      if (!monto) return fallo('Pon un monto mayor que cero.');
+      if (!fd.get('fecha')) return fallo('Falta la fecha.');
+      const tipo = fd.get('tipo');
+      // si "andrea" ya existe con otra grafía, se respeta cómo se escribió la primera vez
+      const previa = estado.deudas.filter(function (x) { return L.claveDe(x.persona) === L.claveDe(nombre); })[0];
+      const a = { persona: previa ? previa.persona : nombre, mon: fd.get('mon'), nota: String(fd.get('nota') || '').trim(), fecha: fd.get('fecha'),
+        monto: (tipo === 'medebe' || tipo === 'lepague' ? 1 : -1) * monto, pago: tipo === 'mepago' || tipo === 'lepague' };
+      const viejo = hoja.id ? estado.deudas.filter(function (x) { return x.id === hoja.id; })[0] : null;
+      if (viejo) { a.id = viejo.id; a.creado = viejo.creado; estado.deudas[estado.deudas.indexOf(viejo)] = a; }
+      else { a.id = L.uid(); a.creado = Date.now(); estado.deudas.push(a); }
+      guardar(); cerrar(); pintar(); aviso('Guardado');
     },
     cat: function (fd) {
       const nombre = String(fd.get('nombre') || '').trim();

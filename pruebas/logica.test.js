@@ -148,7 +148,7 @@ test('respaldo: rechaza lo ajeno y descarta filas dañadas', () => {
 test('aCSV: orden por fecha, comillas y ahorro incluido', () => {
   const csv = L.aCSV(base());
   const lineas = csv.replace('﻿', '').trim().split('\r\n');
-  assert.equal(lineas[0], 'Fecha;Tipo;Cuenta;Categoría;Nota;Moneda;Monto;Tipo de cambio;Monto en soles');
+  assert.equal(lineas[0], 'Fecha;Tipo;Cuenta;Categoría o persona;Nota;Moneda;Monto;Tipo de cambio;Monto en soles');
   assert.equal(lineas.length, 1 + 6 + 3);
   assert.ok(lineas[1].startsWith('2026-09-10;Ahorro;;Viaje'));
   assert.ok(csv.includes('2026-10-03;Gasto;BCP;Comida;"a ""prueba""; rara";USD;20.00;3.5;80.00'));
@@ -194,7 +194,7 @@ test('respaldo de la versión anterior (sin cuentas) se migra', () => {
     ]
   });
   assert.equal(r.ok, true);
-  assert.equal(r.estado.v, 2);
+  assert.equal(r.estado.v, L.VERSION);
   assert.deepEqual(r.estado.cuentas.map(c => c.nombre), ['BCP', 'Scotiabank', 'PayPal', 'Efectivo']);
   assert.equal(r.estado.movs[0].cuenta, 'k-bcp');
   assert.equal(r.estado.movs[1].cobrado, 7200);
@@ -212,4 +212,74 @@ test('respaldo: transferencias mal formadas se descartan', () => {
   });
   assert.equal(r.estado.movs.length, 1);
   assert.equal(r.estado.movs[0].llega, 10000);
+});
+
+test('deudas: el saldo por persona suma lo debido y los pagos, sin importar mayúsculas', () => {
+  const e = L.estadoInicial();
+  const ap = (persona, monto, mon, pago, fecha) =>
+    e.deudas.push({ id: persona + fecha + monto, persona, monto, mon: mon || 'PEN', nota: '', fecha, pago: !!pago, creado: e.deudas.length });
+  ap('Andrea', 1250, 'PEN', false, '2026-10-01');
+  ap('andrea ', 900, 'PEN', false, '2026-10-03');
+  ap('Andrea', -900, 'PEN', true, '2026-10-04');
+  ap('Andrea', 500, 'USD', false, '2026-10-05');
+  ap('Mamá', -4500, 'PEN', false, '2026-09-08');
+  ap('Luis', 1000, 'PEN', false, '2026-09-01');
+  ap('Luis', -1000, 'PEN', true, '2026-09-02');
+  const f = L.deudasPorPersona(e);
+  assert.deepEqual(f.map(x => x.nombre), ['Mamá', 'Andrea', 'Luis']);   // los pendientes primero, el saldado al final
+  const andrea = f.find(x => x.clave === 'andrea');
+  assert.deepEqual(andrea.saldo, { PEN: 1250, USD: 500 });
+  assert.equal(andrea.apuntes.length, 4);
+  assert.equal(f.find(x => x.clave === 'luis').pendiente, false);
+  assert.equal(L.textoSaldo(andrea.saldo), 'S/ 12.50 · US$ 5.00');
+  assert.equal(L.textoSaldo({ PEN: 0, USD: 0 }), 'Saldado');
+  const t = L.totalDeudas(e);
+  assert.deepEqual(t.meDeben, { PEN: 1250, USD: 500 });
+  assert.deepEqual(t.debo, { PEN: 4500, USD: 0 });
+});
+
+test('deudas: tipo de cada apunte y paso por el respaldo', () => {
+  const base = { persona: 'Andrea', mon: 'PEN', nota: 'Taxi', fecha: '2026-10-01' };
+  assert.equal(L.tipoDeuda({ ...base, monto: 500, pago: false }), 'medebe');
+  assert.equal(L.tipoDeuda({ ...base, monto: -500, pago: false }), 'ledebo');
+  assert.equal(L.tipoDeuda({ ...base, monto: -500, pago: true }), 'mepago');
+  assert.equal(L.tipoDeuda({ ...base, monto: 500, pago: true }), 'lepague');
+  const r = L.validar({ movs: [], deudas: [
+    { ...base, id: 'a', monto: 500 },
+    { ...base, id: 'b', monto: 0 },                 // sin monto: se descarta
+    { ...base, id: 'c', monto: 5.5 },               // decimales: se descarta
+    { ...base, id: 'd', persona: '  ', monto: 100 }, // sin nombre: se descarta
+    { ...base, id: 'e', monto: 100, mon: 'EUR' },   // moneda ajena: se descarta
+    { ...base, id: 'f', monto: -100, fecha: 'ayer' }
+  ] });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.estado.deudas.map(d => d.id), ['a']);
+  assert.deepEqual(L.validar({ movs: [] }).estado.deudas, []);   // respaldos viejos no traen deudas
+});
+
+test('aCSV: las deudas salen con su rótulo', () => {
+  const e = L.estadoInicial();
+  e.deudas.push({ id: 'x', persona: 'Andrea', monto: 1250, mon: 'PEN', nota: 'Taxi', fecha: '2026-10-01', pago: false, creado: 1 });
+  e.deudas.push({ id: 'y', persona: 'Andrea', monto: -1250, mon: 'PEN', nota: '', fecha: '2026-10-02', pago: true, creado: 2 });
+  const l = L.aCSV(e).trim().split('\r\n');
+  assert.equal(l[1], '2026-10-01;Me debe;Andrea;;Taxi;PEN;12.50;;');
+  assert.equal(l[2], '2026-10-02;Me pagó;Andrea;;;PEN;-12.50;;');
+});
+
+test('deudas: los pagos descuentan primero lo más antiguo y queda lo que falta', () => {
+  const e = L.estadoInicial();
+  const ap = (monto, nota, fecha, pago) => e.deudas.push({ id: nota + fecha, persona: 'Andrea', monto, mon: 'PEN', nota, fecha, pago: !!pago, creado: e.deudas.length });
+  ap(900, 'Taxi de regreso', '2026-09-20');
+  ap(1250, 'Taxi al aeropuerto', '2026-10-01');
+  ap(-1000, '', '2026-10-02', true);   // paga el primero y 100 del segundo
+  const f = L.deudasPorPersona(e)[0];
+  const ab = L.abiertos(f);
+  assert.equal(ab.length, 1);
+  assert.equal(ab[0].apunte.nota, 'Taxi al aeropuerto');
+  assert.equal(ab[0].resto, 1150);
+  ap(-1150, '', '2026-10-03', true);
+  assert.deepEqual(L.abiertos(L.deudasPorPersona(e)[0]), []);   // saldado: nada abierto
+  ap(-300, 'Cena', '2026-10-04');       // ahora yo le debo
+  const deb = L.abiertos(L.deudasPorPersona(e)[0]);
+  assert.equal(deb[0].resto, -300);
 });

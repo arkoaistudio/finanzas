@@ -61,7 +61,8 @@ Tiene que estar publicada con https (GitHub Pages sirve y es gratis).
   cambiar el tipo de cambio no mueve los meses pasados.
 - **Metas.** Los aportes no se descuentan de ninguna cuenta: son plata apartada
   que sigue en el banco. Sí se restan de lo que "queda este mes".
-- **Versión de los datos.** Va en `VERSION` de `logica.js` (hoy 2). `validar`
+- **Personas (por cobrar y por pagar).** Pantalla `#deudas`, enlazada desde el Resumen. Es una libreta aparte: **no toca saldos, ingresos ni gastos**. Cada apunte es un monto con signo (`+` me debe, `−` le debo); un pago es otro apunte con `pago: true` y signo contrario, así el saldo por persona y moneda es siempre la suma y nada se borra. Los nombres se agrupan sin mirar mayúsculas. "Lo que falta" explica el saldo con los conceptos más recientes (`abiertos` en `logica.js`); lo más viejo se da por pagado primero.
+- **Versión de los datos.** Va en `VERSION` de `logica.js` (hoy 3). `validar`
   migra lo guardado y los respaldos de versiones anteriores.
 - **Actualizar la app.** Al publicar cambios, subir el número de `CACHE` en
   `sw.js`. En el celular el cambio aparece la segunda vez que se abre.
@@ -74,6 +75,7 @@ Tiene que estar publicada con https (GitHub Pages sirve y es gratis).
 ## Lo que no hace (todavía)
 
 - Movimientos que se repiten solos (alquiler, sueldo).
+- Dividir un gasto entre varios en un solo paso (hoy se anota lo que debe cada uno) ni ligar el cobro a una cuenta.
 - Tarjetas de crédito como deuda, ni cuotas. El saldo inicial de una cuenta no
   puede ser negativo (el teclado numérico del iPhone no tiene signo menos).
 - Sincronizar entre aparatos.

@@ -34,7 +34,7 @@ if (location.hostname !== '127.0.0.1' && location.hostname !== 'localhost') thro
     W().confirm = () => true;
     ok('migra los datos anteriores y muestra las cuentas', texto().includes('de antes') && texto().includes('Scotiabank') && texto().includes('PayPal'));
     accion('editar-mov'); accion('borrar-mov');
-    ok('queda vacío tras borrar', q('.vacio') && est().movs.length === 0 && est().v === 2 && est().cuentas.length === 4);
+    ok('queda vacío tras borrar', q('.vacio') && est().movs.length === 0 && est().v === W().Logica.VERSION && est().cuentas.length === 4);
 
     accion('nuevo-mov');
     ok('abre la hoja y enfoca el monto', !q('#hoja').hidden && D().activeElement.name === 'monto');
@@ -165,6 +165,39 @@ if (location.hostname !== '127.0.0.1' && location.hostname !== 'localhost') thro
     accion('cerrar');
     accion('cambio'); pon('tc', '3.75'); enviar();
     ok('cambia el tipo de cambio sin tocar lo anotado', est().tc === 3.75 && est().movs[2].tc === 3.5 && est().movs[1].cobrado === 7183);
+
+    // el taxi compartido con Andrea: anotar, ver el saldo, recibir un pago parcial y saldar
+    await ir('#deudas');
+    ok('Personas arranca vacío', q('.vacio') && texto().includes('Anota quién te debe'));
+    const movsAntes = est().movs.length;
+    accion('nueva-deuda');
+    enviar();
+    ok('apunte sin persona da error', q('#hoja .error'));
+    pon('persona', 'Andrea'); pon('monto', '12,50'); pon('nota', 'Taxi al aeropuerto');
+    enviar();
+    e = est();
+    ok('guarda lo que me debe', e.deudas.length === 1 && e.deudas[0].monto === 1250 && e.deudas[0].persona === 'Andrea' && !e.deudas[0].pago, e.deudas);
+    ok('los movimientos y las cuentas no se tocan', e.movs.length === movsAntes);
+    ok('la lista muestra quién, cuánto y de qué', texto().includes('Andrea') && texto().includes('S/ 12.50') && texto().includes('Taxi al aeropuerto'), texto());
+    accion('nueva-deuda');
+    pon('persona', 'andrea '); pon('monto', '8'); pon('nota', 'Taxi de regreso');
+    enviar();
+    ok('el mismo nombre con otra grafía suma en una sola persona', est().deudas[1].persona === 'Andrea' && qq('#vista [data-accion=persona]').length === 1 && texto().includes('S/ 20.50'), texto());
+    accion('persona');
+    ok('la ficha lista lo que falta y el historial', q('#hoja').textContent.includes('Lo que falta') && q('#hoja').textContent.includes('Taxi de regreso') && qq('#hoja [data-accion=editar-deuda]').length === 2);
+    accion('saldar');
+    ok('saldar propone el pago total en sentido contrario', q('#hoja [name=monto]').value === '20.50' && q('#hoja input[name=tipo][value=mepago]').checked);
+    pon('monto', '12.50');
+    enviar();
+    e = est();
+    ok('el pago baja el saldo', e.deudas.length === 3 && e.deudas[2].pago === true && e.deudas[2].monto === -1250);
+    ok('queda S/ 8.00 y el concepto que falta', texto().includes('S/ 8.00') && texto().includes('Taxi de regreso') && !texto().includes('Taxi al aeropuerto'), texto());
+    accion('persona'); accion('saldar'); enviar();
+    ok('saldado: la persona pasa a Saldadas', texto().includes('Saldadas') && texto().includes('Saldado') && !q('#vista .por-cobrar'), texto());
+    accion('persona'); accion('editar-deuda'); accion('borrar-deuda');
+    ok('se puede borrar un apunte', est().deudas.length === 3);
+    await ir('#resumen');
+    ok('borrar el último pago devuelve la deuda y el resumen la muestra', texto().includes('Por cobrar y por pagar') && texto().includes('Andrea') && texto().includes('S/ 8.00'), texto());
 
     await cargar('/index.html?x=' + Date.now() + '#movimientos');
     W().confirm = () => true;

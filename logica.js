@@ -7,7 +7,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  const VERSION = 2;
+  const VERSION = 3;
   const SIMBOLO = { PEN: 'S/', USD: 'US$' };
   const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
     'agosto', 'setiembre', 'octubre', 'noviembre', 'diciembre'];
@@ -133,6 +133,7 @@
       movs: [],
       topes: {},
       metas: [],
+      deudas: [],
       ultimoRespaldo: null
     };
   }
@@ -274,6 +275,83 @@
     return r;
   }
 
+  // ---------- cuentas por cobrar / por pagar ----------
+
+  /* Cada apunte es una cantidad con signo: positivo = esa persona me debe más,
+     negativo = le debo más a esa persona. Un pago es otro apunte (`pago: true`)
+     con el signo contrario, así el saldo siempre es la suma y nada se borra. */
+  function claveDe(nombre) { return String(nombre || '').trim().toLowerCase(); }
+
+  function tipoDeuda(d) {
+    if (d.pago) return d.monto < 0 ? 'mepago' : 'lepague';
+    return d.monto > 0 ? 'medebe' : 'ledebo';
+  }
+  const ROTULO_DEUDA = { medebe: 'Me debe', ledebo: 'Le debo', mepago: 'Me pagó', lepague: 'Le pagué' };
+
+  // Una fila por persona con su saldo en cada moneda y sus apuntes, lo nuevo arriba.
+  function deudasPorPersona(estado) {
+    const por = {};
+    for (const d of estado.deudas || []) {
+      const k = claveDe(d.persona);
+      const f = por[k] = por[k] || { clave: k, nombre: d.persona, saldo: { PEN: 0, USD: 0 }, apuntes: [] };
+      f.saldo[d.mon] += d.monto;
+      f.apuntes.push(d);
+    }
+    return Object.keys(por).map(function (k) {
+      const f = por[k];
+      f.apuntes.sort(function (a, b) {
+        return a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : (b.creado || 0) - (a.creado || 0);
+      });
+      f.nombre = f.apuntes[0].persona;
+      f.pendiente = f.saldo.PEN !== 0 || f.saldo.USD !== 0;
+      return f;
+    }).sort(function (a, b) {
+      if (a.pendiente !== b.pendiente) return a.pendiente ? -1 : 1;
+      const peso = function (f) { return Math.abs(f.saldo.PEN) + Math.round(Math.abs(f.saldo.USD) * estado.tc); };
+      return peso(b) - peso(a);
+    });
+  }
+
+  /* Lo que sigue abierto de una persona: el saldo se explica con los conceptos más
+     recientes en ese sentido; lo más antiguo es lo que ya se fue pagando. Devuelve
+     cada concepto con lo que le falta, lo más nuevo arriba. Sirve para decir "de qué"
+     es lo que queda, no solo cuánto. */
+  function abiertos(f) {
+    const r = [];
+    for (const mon of ['PEN', 'USD']) {
+      const saldo = f.saldo[mon];
+      if (!saldo) continue;
+      const dir = saldo > 0 ? 1 : -1;
+      let falta = Math.abs(saldo);
+      for (const a of f.apuntes) {   // ya vienen de lo más nuevo a lo más viejo
+        if (a.mon !== mon || a.pago || a.monto * dir <= 0 || falta <= 0) continue;
+        const parte = Math.min(falta, Math.abs(a.monto));
+        falta -= parte;
+        r.push({ apunte: a, resto: dir * parte, mon: mon });
+      }
+    }
+    return r;
+  }
+
+  // Lo que me deben y lo que debo, sumado por moneda.
+  function totalDeudas(estado) {
+    const r = { meDeben: { PEN: 0, USD: 0 }, debo: { PEN: 0, USD: 0 } };
+    for (const f of deudasPorPersona(estado)) {
+      for (const mon of ['PEN', 'USD']) {
+        if (f.saldo[mon] > 0) r.meDeben[mon] += f.saldo[mon];
+        else r.debo[mon] -= f.saldo[mon];
+      }
+    }
+    return r;
+  }
+
+  // "S/ 12.50 · US$ 3.00" con lo que queda en cada moneda, o "Saldado".
+  function textoSaldo(saldo) {
+    const t = [];
+    for (const mon of ['PEN', 'USD']) if (saldo[mon]) t.push(fmt(Math.abs(saldo[mon]), mon));
+    return t.length ? t.join(' · ') : 'Saldado';
+  }
+
   // ---------- respaldo ----------
 
   /* Revisa un respaldo antes de cargarlo y descarta lo que venga mal formado,
@@ -301,7 +379,7 @@
         gasto: cats(o.categorias && o.categorias.gasto, base.categorias.gasto),
         ingreso: cats(o.categorias && o.categorias.ingreso, base.categorias.ingreso)
       },
-      cuentas: [], movs: [], topes: {}, metas: [],
+      cuentas: [], movs: [], topes: {}, metas: [], deudas: [],
       ultimoRespaldo: typeof o.ultimoRespaldo === 'string' ? o.ultimoRespaldo : null
     };
     for (const c of Array.isArray(o.cuentas) ? o.cuentas : []) {
@@ -357,6 +435,13 @@
         e.metas.push(meta);
       }
     }
+    for (const d of Array.isArray(o.deudas) ? o.deudas : []) {
+      if (!d || !texto(d.persona).trim() || !entero(d.monto) || d.monto === 0 || !SIMBOLO[d.mon] || !FECHA.test(d.fecha)) continue;
+      e.deudas.push({
+        id: texto(d.id) || uid(), persona: texto(d.persona.trim(), 40), monto: d.monto, mon: d.mon,
+        nota: texto(d.nota, 200), fecha: d.fecha, pago: d.pago === true, creado: typeof d.creado === 'number' ? d.creado : 0
+      });
+    }
     return { ok: true, estado: e };
   }
 
@@ -384,8 +469,12 @@
           plata(a.monto), g.mon === 'USD' ? a.tc : '', plata(aSoles({ monto: a.monto, mon: g.mon, tc: a.tc }))]);
       }
     }
+    for (const d of estado.deudas || []) {
+      filas.push([d.fecha, ROTULO_DEUDA[tipoDeuda(d)], d.persona, '', d.nota || '', d.mon, plata(d.monto),
+        d.mon === 'USD' ? estado.tc : '', '']);
+    }
     filas.sort(function (a, b) { return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0; });
-    filas.unshift(['Fecha', 'Tipo', 'Cuenta', 'Categoría', 'Nota', 'Moneda', 'Monto', 'Tipo de cambio', 'Monto en soles']);
+    filas.unshift(['Fecha', 'Tipo', 'Cuenta', 'Categoría o persona', 'Nota', 'Moneda', 'Monto', 'Tipo de cambio', 'Monto en soles']);
     return '﻿' + filas.map(function (f) { return f.map(celda).join(';'); }).join('\r\n') + '\r\n';
   }
 
@@ -425,6 +514,12 @@
       { id: 'g2', nombre: 'Viaje', objetivo: 200000, mon: 'USD', fecha: '',
         aportes: [{ id: 'a3', monto: 65000, fecha: dia(antes, 20), nota: '', tc: 3.52 }] }
     ];
+    e.deudas = [
+      { id: 'q1', persona: 'Andrea', monto: 1250, mon: 'PEN', nota: 'Taxi al aeropuerto', fecha: dia(mes, 1), pago: false, creado: 1 },
+      { id: 'q2', persona: 'Andrea', monto: 900, mon: 'PEN', nota: 'Taxi de regreso', fecha: dia(antes, 20), pago: false, creado: 2 },
+      { id: 'q3', persona: 'Andrea', monto: -900, mon: 'PEN', nota: '', fecha: dia(mes, 1), pago: true, creado: 3 },
+      { id: 'q4', persona: 'Mamá', monto: -4500, mon: 'PEN', nota: 'Mi parte del regalo', fecha: dia(antes, 8), pago: false, creado: 4 }
+    ];
     return e;
   }
 
@@ -435,6 +530,8 @@
     convertir: convertir, enCuenta: enCuenta, cuentaDe: cuentaDe, usosCuenta: usosCuenta, saldos: saldos,
     estadoInicial: estadoInicial, nombreCat: nombreCat, usosCat: usosCat, resumenMes: resumenMes,
     diasDelMes: diasDelMes, presupuestoMes: presupuestoMes, progresoMeta: progresoMeta,
+    tipoDeuda: tipoDeuda, ROTULO_DEUDA: ROTULO_DEUDA, deudasPorPersona: deudasPorPersona, abiertos: abiertos,
+    totalDeudas: totalDeudas, textoSaldo: textoSaldo, claveDe: claveDe,
     validar: validar, aCSV: aCSV, demo: demo
   };
 });
