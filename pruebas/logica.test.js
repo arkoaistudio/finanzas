@@ -283,3 +283,69 @@ test('deudas: los pagos descuentan primero lo más antiguo y queda lo que falta'
   const deb = L.abiertos(L.deudasPorPersona(e)[0]);
   assert.equal(deb[0].resto, -300);
 });
+
+test('repartir: partes iguales contigo, el redondeo me toca a mí', () => {
+  const r = L.repartir(2500, [{ persona: 'Andrea', fijo: null }]);
+  assert.deepEqual(r.partes, [{ persona: 'Andrea', monto: 1250 }]);
+  assert.equal(r.mia, 1250);
+  const t = L.repartir(2500, [{ persona: 'Andrea', fijo: null }, { persona: 'Luis', fijo: null }]);
+  assert.deepEqual(t.partes.map(p => p.monto), [833, 833]);
+  assert.equal(t.mia, 834);
+  // una parte fija: el resto se reparte entre los demás y yo
+  const f = L.repartir(2500, [{ persona: 'Andrea', fijo: null }, { persona: 'Luis', fijo: 500 }]);
+  assert.deepEqual(f.partes.map(p => p.monto), [1000, 500]);
+  assert.equal(f.mia, 1000);
+  // pagué todo por ellos: mi parte es cero
+  const todo = L.repartir(1000, [{ persona: 'Luis', fijo: 1000 }]);
+  assert.equal(todo.ok, true);
+  assert.equal(todo.mia, 0);
+  assert.equal(L.repartir(1000, [{ persona: 'Luis', fijo: 1200 }]).ok, false);
+  assert.equal(L.repartir(2, [{ persona: 'A', fijo: null }, { persona: 'B', fijo: null }]).ok, false);
+  assert.equal(L.repartir(null, [{ persona: 'A', fijo: null }]).ok, false);
+});
+
+test('gasto compartido: sale entero de la cuenta, pero solo lo mío cuenta en presupuesto y resumen', () => {
+  const e = L.estadoInicial();
+  e.cuentas[0].inicial = 10000;
+  const m = { id: 'g1', tipo: 'gasto', monto: 2500, mon: 'PEN', tc: 3.5, cuenta: 'k-bcp', cat: 'c-transporte', nota: 'Taxi', fecha: '2026-10-05', creado: 5,
+    partes: [{ persona: 'Andrea', monto: 1000 }, { persona: 'Luis', monto: 500 }] };
+  e.movs.push(m);
+  e.topes['c-transporte'] = 5000;
+  L.sincronizarPartes(e, m);
+  assert.equal(L.propio(m), 1000);
+  assert.equal(L.saldos(e).filas[0].saldo, 7500);                                   // la cuenta pagó los 25
+  assert.equal(L.resumenMes(e, '2026-10').gastos.total, 1000);                      // pero el gasto mío es 10
+  assert.equal(L.presupuestoMes(e, '2026-10').filas.filter(f => f.cat === 'c-transporte')[0].gastado, 1000);
+  assert.equal(L.diasDelMes(e, '2026-10', 'todo')[0].neto, -1000);
+  assert.equal(e.deudas.length, 2);
+  assert.deepEqual(e.deudas.map(d => [d.persona, d.monto, d.mov, d.nota]), [['Andrea', 1000, 'g1', 'Taxi'], ['Luis', 500, 'g1', 'Taxi']]);
+  // editar el gasto rehace sus deudas sin duplicar
+  m.partes = [{ persona: 'andrea', monto: 1200 }];
+  L.sincronizarPartes(e, m);
+  assert.equal(e.deudas.length, 1);
+  assert.equal(e.deudas[0].monto, 1200);
+  // un pago que entra a una cuenta la mueve; uno sin cuenta no
+  e.deudas.push({ id: 'p1', persona: 'Andrea', monto: -700, mon: 'PEN', nota: '', fecha: '2026-10-06', pago: true, creado: 9, cuenta: 'k-bcp' });
+  e.deudas.push({ id: 'p2', persona: 'Andrea', monto: -100, mon: 'PEN', nota: '', fecha: '2026-10-06', pago: true, creado: 10 });
+  assert.equal(L.saldos(e).filas[0].saldo, 7500 + 700);
+  assert.equal(L.usosCuenta(e, 'k-bcp'), 2);
+  assert.equal(L.deudasPorPersona(e)[0].saldo.PEN, 400);
+});
+
+test('gasto compartido: pasa por el respaldo y descarta lo mal formado', () => {
+  const e = L.estadoInicial();
+  const base = { tipo: 'gasto', mon: 'PEN', tc: 3.5, cuenta: 'k-bcp', cat: 'c-transporte', nota: '', fecha: '2026-10-05', creado: 1 };
+  e.movs.push({ ...base, id: 'ok', monto: 2500, partes: [{ persona: 'Andrea', monto: 1250 }] });
+  e.movs.push({ ...base, id: 'pasa', monto: 1000, partes: [{ persona: 'Luis', monto: 1500 }] });   // suma más que el gasto
+  e.movs.push({ ...base, id: 'mala', monto: 1000, partes: [{ persona: '', monto: 100 }] });
+  e.deudas.push({ id: 'd1', persona: 'Andrea', monto: 1250, mon: 'PEN', nota: '', fecha: '2026-10-05', pago: false, creado: 1, mov: 'ok' });
+  e.deudas.push({ id: 'd2', persona: 'Luis', monto: 1500, mon: 'PEN', nota: '', fecha: '2026-10-05', pago: false, creado: 1, mov: 'pasa' });
+  e.deudas.push({ id: 'd3', persona: 'Andrea', monto: -100, mon: 'PEN', nota: '', fecha: '2026-10-06', pago: true, creado: 2, cuenta: 'k-paypal' });   // PayPal es en dólares
+  e.deudas.push({ id: 'd4', persona: 'Andrea', monto: -100, mon: 'PEN', nota: '', fecha: '2026-10-06', pago: true, creado: 3, cuenta: 'k-efectivo' });
+  const r = L.validar(JSON.parse(JSON.stringify(e))).estado;
+  assert.deepEqual(r.movs.map(m => !!m.partes), [true, false, false]);
+  assert.equal(r.deudas.filter(d => d.id === 'd1')[0].mov, 'ok');
+  assert.equal(r.deudas.filter(d => d.id === 'd2')[0].mov, undefined);     // su gasto perdió las partes: la deuda queda suelta
+  assert.equal(r.deudas.filter(d => d.id === 'd3')[0].cuenta, undefined);  // cuenta en otra moneda: se ignora
+  assert.equal(r.deudas.filter(d => d.id === 'd4')[0].cuenta, 'k-efectivo');
+});

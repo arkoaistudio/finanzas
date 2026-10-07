@@ -260,6 +260,11 @@ a.chip { font-size: 10.5px; font-weight: 500; letter-spacing: .09em; text-transf
 }
 #aviso.fallo { background: var(--rojo); bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 12px); white-space: pre-wrap; }
 
+/* reparto de un gasto: un campo chico por persona */
+.campo.parte { padding-top: 14px; padding-bottom: 14px; }
+.campo.parte > .eyebrow { margin-bottom: 0; }
+.campo.parte .sim { font-size: 15px; transform: none; }
+.campo.parte input { font-size: 26px; }
 /* personas: lo que me deben va en verde cuero, lo que debo en rojo */
 .por-cobrar { color: var(--cuero); }
 .dos-col { grid-template-columns: 1fr 1fr; }

@@ -61,7 +61,9 @@ Tiene que estar publicada con https (GitHub Pages sirve y es gratis).
   cambiar el tipo de cambio no mueve los meses pasados.
 - **Metas.** Los aportes no se descuentan de ninguna cuenta: son plata apartada
   que sigue en el banco. Sí se restan de lo que "queda este mes".
-- **Personas (por cobrar y por pagar).** Pantalla `#deudas`, enlazada desde el Resumen. Es una libreta aparte: **no toca saldos, ingresos ni gastos**. Cada apunte es un monto con signo (`+` me debe, `−` le debo); un pago es otro apunte con `pago: true` y signo contrario, así el saldo por persona y moneda es siempre la suma y nada se borra. Los nombres se agrupan sin mirar mayúsculas. "Lo que falta" explica el saldo con los conceptos más recientes (`abiertos` en `logica.js`); lo más viejo se da por pagado primero.
+- **Personas (por cobrar y por pagar).** Pantalla `#deudas`, enlazada desde el Resumen. Un apunte nunca cuenta como ingreso ni gasto. Cada apunte es un monto con signo (`+` me debe, `−` le debo); un pago es otro apunte con `pago: true` y signo contrario, así el saldo por persona y moneda es siempre la suma y nada se borra. Los nombres se agrupan sin mirar mayúsculas. "Lo que falta" explica el saldo con los conceptos más recientes (`abiertos` en `logica.js`); lo más viejo se da por pagado primero.
+- **Gastos compartidos.** En un gasto, "Compartido con" marca a las personas; se reparte en partes iguales contigo (el redondeo me toca a mí) o con la parte que se escriba a mano, y las deudas se crean solas (`partes` en el movimiento, `mov` en cada apunte). La cuenta paga el monto entero, pero el presupuesto, el resumen y el neto del día usan solo lo mío (`propio`, `aSolesPropio`). Editar el gasto rehace sus deudas (`sincronizarPartes`); borrarlo las borra, pero no los pagos ya anotados.
+- **Pagos a una cuenta.** Un pago puede ligarse a una cuenta de la misma moneda (`cuenta` en el apunte): `saldos` la sube o baja; sin cuenta solo cambia lo que se debe. "Saldar" propone la cuenta con la que se pagó el gasto.
 - **Versión de los datos.** Va en `VERSION` de `logica.js` (hoy 3). `validar`
   migra lo guardado y los respaldos de versiones anteriores.
 - **Actualizar la app.** Al publicar cambios, subir el número de `CACHE` en
@@ -75,7 +77,7 @@ Tiene que estar publicada con https (GitHub Pages sirve y es gratis).
 ## Lo que no hace (todavía)
 
 - Movimientos que se repiten solos (alquiler, sueldo).
-- Dividir un gasto entre varios en un solo paso (hoy se anota lo que debe cada uno) ni ligar el cobro a una cuenta.
+- Compartir un gasto que ya pagó otra persona (hoy se anota a mano como "Le debo").
 - Tarjetas de crédito como deuda, ni cuotas. El saldo inicial de una cuenta no
   puede ser negativo (el teclado numérico del iPhone no tiene signo menos).
 - Sincronizar entre aparatos.

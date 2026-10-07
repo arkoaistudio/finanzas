@@ -97,8 +97,10 @@
     } else if (m.mon === 'USD') {
       sub = '<span class="meta">≈ ' + L.fmt(L.aSoles(m), 'PEN') + '</span>';
     }
+    const comp = m.partes && m.partes.length;
+    if (comp) sub += '<span class="meta">Tu parte ' + L.fmt(L.propio(m), m.mon) + '</span>';
     return abre + esc(L.nombreCat(estado, m.tipo, m.cat)) + '</b><span class="meta">' + esc(cta ? cta.nombre : '') +
-      (m.nota ? ' · ' + esc(m.nota) : '') + '</span></span>' +
+      (m.nota ? ' · ' + esc(m.nota) : '') + (comp ? ' · con ' + esc(m.partes.map(function (p) { return p.persona; }).join(', ')) : '') + '</span></span>' +
       '<span class="der' + (ing ? ' ingreso' : '') + '">' + (ing ? '+ ' : '') + L.fmt(m.monto, m.mon) + sub + '</span></button>';
   }
   function seccionCuentas() {
@@ -371,6 +373,56 @@
 
   // ---------- hojas ----------
 
+  // Las personas que ya conoce la libreta, más las que se agregaron o marcaron en este formulario.
+  function nombresConocidos(d) {
+    const mapa = {};
+    const suma = function (n) { if (!mapa[L.claveDe(n)]) mapa[L.claveDe(n)] = n; };
+    estado.deudas.forEach(function (x) { suma(x.persona); });
+    (d.extras || []).forEach(suma);
+    (d.con || []).forEach(suma);
+    return Object.keys(mapa).map(function (k) { return mapa[k]; });
+  }
+  function compartir(d) {
+    const nombres = nombresConocidos(d);
+    const marcado = function (n) { return (d.con || []).some(function (x) { return L.claveDe(x) === L.claveDe(n); }); };
+    let h = '<div class="campo"><span class="eyebrow">Compartido con</span>' +
+      (nombres.length ? '<div class="tira">' + nombres.map(function (n) {
+        return '<label class="chip"><input type="checkbox" name="con" value="' + esc(n) + '"' + (marcado(n) ? ' checked' : '') + ' data-repinta><span>' + esc(n) + '</span></label>';
+      }).join('') + '</div>' : '') +
+      '<input type="text" name="otra" autocomplete="off" maxlength="40" data-repinta placeholder="' + (nombres.length ? 'Otra persona…' : 'Con quién lo compartiste…') +
+      '" value="" style="margin-top:' + (nombres.length ? 14 : 0) + 'px"></div>';
+    const sel = nombres.filter(marcado);
+    if (sel.length) {
+      h += sel.map(function (n) {
+        return '<label class="campo monto parte"><span class="eyebrow">Le toca a ' + esc(n) + '</span><span class="sim">' + L.SIMBOLO[d.mon] + '</span>' +
+          '<input type="text" name="parte:' + esc(n) + '" inputmode="decimal" autocomplete="off" data-parte="' + esc(n) + '" value="' + esc(d['parte:' + n] || '') + '"></label>';
+      }).join('') + '<p class="meta nota-hoja" id="reparto-resumen"></p>';
+    }
+    return h;
+  }
+  // Mientras se tipea, muestra cuánto le toca a cada uno (partes iguales contigo) y cuánto es lo mío.
+  function actualizarReparto() {
+    if (!hoja || hoja.tipo !== 'mov') return;
+    const f = $('#hoja form'), resumen = $('#reparto-resumen');
+    if (!f || !resumen) return;
+    const fd = new FormData(f);
+    const monto = L.parseMonto(fd.get('monto')), mon = fd.get('mon') || 'PEN';
+    const rep = L.repartir(monto, fd.getAll('con').map(function (n) { return { persona: n, fijo: L.parseMonto(fd.get('parte:' + n)) }; }));
+    f.querySelectorAll('input[data-parte]').forEach(function (i) {
+      const p = rep.partes.filter(function (x) { return x.persona === i.dataset.parte; })[0];
+      i.placeholder = p ? L.aTexto(p.monto) : '0.00';
+    });
+    resumen.textContent = !monto ? 'Pon el monto y se reparte en partes iguales contigo.' :
+      rep.ok ? 'Pagas ' + L.fmt(monto, mon) + ' y tu parte es ' + L.fmt(rep.mia, mon) + '. Lo demás te lo deben.' : rep.error;
+  }
+  function bloqueCuenta(d) {
+    const lista = [{ id: '', nombre: 'Ninguna' }].concat(estado.cuentas.filter(function (c) { return c.mon === d.mon; }));
+    return '<div class="campo"><span class="eyebrow">' + (d.tipo === 'mepago' ? 'Entra a' : 'Sale de') + '</span><div class="tira">' +
+      lista.map(function (c) {
+        return '<label class="chip"><input type="radio" name="cuenta" value="' + esc(c.id) + '"' + ((d.cuenta || '') === c.id ? ' checked' : '') + '><span>' + esc(c.nombre) + '</span></label>';
+      }).join('') + '</div><span class="meta ayuda">Si eliges una cuenta, su saldo se mueve con este pago. Con "Ninguna" solo cambia lo que te deben.</span></div>';
+  }
+
   function topeHoja(titulo) {
     return '<div class="tope"><h2>' + titulo + '</h2><button type="button" data-accion="cerrar" aria-label="Cerrar">' + ICO.cerrar + '</button></div>';
   }
@@ -427,7 +479,7 @@
           (cta.mon !== d.mon ? real('cobrado', (d.tipo === 'ingreso' ? 'Recibido en ' : 'Cobrado en ') + esc(cta.nombre), d.mon, cta.mon) : '') +
           '<div class="campo"><span class="eyebrow">Categoría</span><div class="tira">' + estado.categorias[d.tipo].map(function (c) {
             return '<label class="chip"><input type="radio" name="cat" value="' + esc(c.id) + '"' + (c.id === d.cat ? ' checked' : '') + '><span>' + esc(c.nombre) + '</span></label>';
-          }).join('') + '</div></div>';
+          }).join('') + '</div></div>' + (d.tipo === 'gasto' ? compartir(d) : '');
       }
       return h + '<div class="dos">' + campoFecha('fecha', 'Fecha', d.fecha) + campoTexto('nota', 'Nota', d.nota, 'placeholder="Opcional" maxlength="200"') + '</div>' +
         errorHoja() + '<div class="pie-hoja"><button class="btn prim ancho">Guardar</button>' +
@@ -493,7 +545,7 @@
       const nombres = {};
       estado.deudas.forEach(function (x) { nombres[L.claveDe(x.persona)] = x.persona; });
       return topeHoja(hoja.id ? 'Editar apunte' : 'Nuevo apunte') + '<form data-form="deuda">' +
-        '<div class="campo">' + seg('tipo', [['medebe', 'Me debe'], ['ledebo', 'Le debo'], ['mepago', 'Me pagó'], ['lepague', 'Le pagué']], d.tipo, false) + '</div>' +
+        '<div class="campo">' + seg('tipo', [['medebe', 'Me debe'], ['ledebo', 'Le debo'], ['mepago', 'Me pagó'], ['lepague', 'Le pagué']], d.tipo, true) + '</div>' +
         '<label class="campo"><span class="eyebrow">Persona</span><input type="text" name="persona" list="personas" autocomplete="off" ' +
         'maxlength="40" placeholder="Andrea" value="' + esc(d.persona) + '"><datalist id="personas">' +
         Object.keys(nombres).map(function (k) { return '<option value="' + esc(nombres[k]) + '">'; }).join('') + '</datalist></label>' +
@@ -501,7 +553,9 @@
         '<div class="campo"><span class="eyebrow">Moneda</span>' + seg('mon', MONEDAS, d.mon, true) + '</div>' +
         campoTexto('nota', 'De qué', d.nota, 'placeholder="Taxi al aeropuerto" maxlength="200"') +
         campoFecha('fecha', 'Fecha', d.fecha) +
-        '<p class="meta nota-hoja">Es solo una libreta: no mueve el saldo de tus cuentas ni cuenta como ingreso o gasto.</p>' +
+        (d.tipo === 'mepago' || d.tipo === 'lepague' ? bloqueCuenta(d) : '') +
+        '<p class="meta nota-hoja">Un apunte nunca cuenta como ingreso ni gasto.' +
+        (hoja.mov ? ' Este viene de un gasto compartido: si editas ese gasto, el apunte se rehace.' : '') + '</p>' +
         errorHoja() + '<div class="pie-hoja"><button class="btn prim ancho">Guardar</button>' +
         (hoja.id ? '<button type="button" class="btn peligro ancho" data-accion="borrar-deuda">Eliminar</button>' : '') + '</div></form>';
     },
@@ -522,7 +576,8 @@
         '<div class="encabezado"><span class="eyebrow">Historial</span><span class="eyebrow gris">Toca para editar</span></div><div class="lista">';
       h += f.apuntes.map(function (a) {
         return '<button class="fila" data-accion="editar-deuda" data-id="' + esc(a.id) + '"><span class="izq"><b>' + L.ROTULO_DEUDA[L.tipoDeuda(a)] +
-          '</b><span class="meta">' + L.fechaCorta(a.fecha) + (a.nota ? ' · ' + esc(a.nota) : '') + '</span></span>' +
+          '</b><span class="meta">' + L.fechaCorta(a.fecha) + (a.nota ? ' · ' + esc(a.nota) : '') +
+          (a.cuenta && L.cuentaDe(estado, a.cuenta) ? ' · ' + (a.monto < 0 ? 'entró a ' : 'salió de ') + esc(L.cuentaDe(estado, a.cuenta).nombre) : '') + '</span></span>' +
           '<span class="der' + (a.pago ? ' neutro' : a.monto > 0 ? ' por-cobrar' : ' negativo') + '">' + (a.monto > 0 ? '+ ' : '') + L.fmt(a.monto, a.mon) + '</span></button>';
       }).join('');
       return h + '</div></div>';
@@ -564,7 +619,9 @@
   function leerBorrador() {
     const f = $('#hoja form');
     if (!f || !hoja.d) return;
-    new FormData(f).forEach(function (v, k) { hoja.d[k] = v; });
+    const fd = new FormData(f);
+    fd.forEach(function (v, k) { hoja.d[k] = v; });
+    if (hoja.tipo === 'mov' && hoja.d.tipo === 'gasto') hoja.d.con = fd.getAll('con');
   }
   function fallo(texto) { leerBorrador(); hoja.error = texto; pintarHoja(); }
 
@@ -573,6 +630,7 @@
     document.body.classList.toggle('con-hoja', !!hoja);
     el.hidden = !hoja;
     el.innerHTML = hoja ? HOJAS[hoja.tipo]() : '';
+    actualizarReparto();
   }
 
   // ---------- pintar ----------
@@ -651,7 +709,7 @@
       abrir({
         tipo: 'mov', id: null, tc: estado.tc,
         d: { tipo: 'gasto', monto: '', mon: cta.mon, cuenta: cta.id, destino: otra ? otra.id : '', cobrado: '', llega: '',
-          cat: estado.categorias.gasto[0].id, fecha: L.mesDe(hoy) === mes ? hoy : mes + '-01', nota: '' }
+          cat: estado.categorias.gasto[0].id, fecha: L.mesDe(hoy) === mes ? hoy : mes + '-01', nota: '', con: [], extras: [], otra: '' }
       }, 'monto');
     },
     'editar-mov': function (d) {
@@ -664,12 +722,25 @@
         d: { tipo: m.tipo, monto: L.aTexto(m.monto), mon: m.mon, cuenta: m.cuenta, destino: m.destino || (otra ? otra.id : ''),
           cobrado: m.monCuenta && !m.estimado ? L.aTexto(m.cobrado) : '',
           llega: transf && !m.estimado && m.llega !== m.monto ? L.aTexto(m.llega) : '',
-          cat: transf ? estado.categorias.gasto[0].id : m.cat, fecha: m.fecha, nota: m.nota || '' }
+          cat: transf ? estado.categorias.gasto[0].id : m.cat, fecha: m.fecha, nota: m.nota || '', con: [], extras: [], otra: '' }
       });
+      if (m.partes && m.partes.length) {
+        // las partes se dejan en blanco (iguales) salvo que alguna sea distinta de lo que saldría repartiendo parejo
+        const dd = hoja.d;
+        dd.con = m.partes.map(function (p) { return p.persona; });
+        const parejo = L.repartir(m.monto, dd.con.map(function (n) { return { persona: n, fijo: null }; }));
+        if (!parejo.ok || parejo.partes.some(function (p, i) { return p.monto !== m.partes[i].monto; })) {
+          m.partes.forEach(function (p) { dd['parte:' + p.persona] = L.aTexto(p.monto); });
+        }
+        pintarHoja();
+      }
     },
     'borrar-mov': function () {
-      if (!confirm('¿Eliminar este movimiento?')) return;
+      const m = estado.movs.filter(function (x) { return x.id === hoja.id; })[0];
+      const comp = m && m.partes && m.partes.length;
+      if (!confirm(comp ? '¿Eliminar este movimiento? También se quita lo que anotaste por cobrar de él.' : '¿Eliminar este movimiento?')) return;
       estado.movs = estado.movs.filter(function (x) { return x.id !== hoja.id; });
+      estado.deudas = estado.deudas.filter(function (x) { return x.mov !== hoja.id; });
       guardar(); cerrar(); pintar(); aviso('Movimiento eliminado');
     },
 
@@ -705,20 +776,28 @@
     },
 
     'nueva-deuda': function (d) {
-      abrir({ tipo: 'deuda', id: null, d: { tipo: 'medebe', persona: d.persona || '', monto: '', mon: 'PEN', nota: '', fecha: L.hoyISO() } },
+      abrir({ tipo: 'deuda', id: null, d: { tipo: 'medebe', persona: d.persona || '', monto: '', mon: 'PEN', nota: '', fecha: L.hoyISO(), cuenta: '' } },
         d.persona ? 'monto' : 'persona');
     },
     'editar-deuda': function (d) {
       const a = estado.deudas.filter(function (x) { return x.id === d.id; })[0];
       if (!a) return;
-      abrir({ tipo: 'deuda', id: a.id, d: { tipo: L.tipoDeuda(a), persona: a.persona, monto: L.aTexto(a.monto), mon: a.mon, nota: a.nota || '', fecha: a.fecha } });
+      abrir({ tipo: 'deuda', id: a.id, mov: a.mov || '', d: { tipo: L.tipoDeuda(a), persona: a.persona, monto: L.aTexto(a.monto), mon: a.mon, nota: a.nota || '', fecha: a.fecha, cuenta: a.cuenta || '' } });
     },
     saldar: function (d) {
       // lo que falta, en la moneda de mayor saldo, como pago en sentido contrario
       const f = persona(d.id);
       const mon = Math.abs(f.saldo.PEN) >= Math.abs(f.saldo.USD) * estado.tc ? 'PEN' : 'USD';
+      // si lo que falta viene de un gasto compartido, propone la misma cuenta con la que se pagó
+      let cuenta = '';
+      if (f.saldo[mon] > 0) {
+        const vinc = L.abiertos(f).filter(function (x) { return x.mon === mon && x.apunte.mov; })[0];
+        const gasto = vinc && estado.movs.filter(function (m) { return m.id === vinc.apunte.mov; })[0];
+        const c = gasto && L.cuentaDe(estado, gasto.cuenta);
+        if (c && c.mon === mon) cuenta = c.id;
+      }
       abrir({ tipo: 'deuda', id: null, d: { tipo: f.saldo[mon] > 0 ? 'mepago' : 'lepague', persona: f.nombre,
-        monto: L.aTexto(f.saldo[mon]), mon: mon, nota: '', fecha: L.hoyISO() } }, 'monto');
+        monto: L.aTexto(f.saldo[mon]), mon: mon, nota: '', fecha: L.hoyISO(), cuenta: cuenta } }, 'monto');
     },
     'borrar-deuda': function () {
       if (!confirm('¿Eliminar este apunte?')) return;
@@ -787,6 +866,12 @@
       } else {
         if (!fd.get('cat')) return fallo('Elige una categoría.');
         m.cat = fd.get('cat');
+        const con = tipo === 'gasto' ? fd.getAll('con') : [];
+        if (con.length) {
+          const rep = L.repartir(monto, con.map(function (n) { return { persona: n, fijo: L.parseMonto(fd.get('parte:' + n)) }; }));
+          if (!rep.ok) return fallo(rep.error || 'No se pudo repartir el gasto.');
+          m.partes = rep.partes;
+        }
         if (cta.mon !== m.mon) {
           // otra moneda que la de la cuenta: vale lo que cobró el banco, o un estimado mientras no se sepa
           const cobrado = L.parseMonto(fd.get('cobrado'));
@@ -802,6 +887,7 @@
         m.id = L.uid(); m.creado = Date.now();
         estado.movs.push(m);
       }
+      L.sincronizarPartes(estado, m);
       mes = L.mesDe(fecha);
       guardar(); cerrar(); pintar(); aviso('Guardado');
     },
@@ -860,11 +946,15 @@
       if (!monto) return fallo('Pon un monto mayor que cero.');
       if (!fd.get('fecha')) return fallo('Falta la fecha.');
       const tipo = fd.get('tipo');
+      const esPago = tipo === 'mepago' || tipo === 'lepague';
+      const cta = esPago ? L.cuentaDe(estado, fd.get('cuenta')) : null;
       // si "andrea" ya existe con otra grafía, se respeta cómo se escribió la primera vez
       const previa = estado.deudas.filter(function (x) { return L.claveDe(x.persona) === L.claveDe(nombre); })[0];
       const a = { persona: previa ? previa.persona : nombre, mon: fd.get('mon'), nota: String(fd.get('nota') || '').trim(), fecha: fd.get('fecha'),
         monto: (tipo === 'medebe' || tipo === 'lepague' ? 1 : -1) * monto, pago: tipo === 'mepago' || tipo === 'lepague' };
       const viejo = hoja.id ? estado.deudas.filter(function (x) { return x.id === hoja.id; })[0] : null;
+      if (cta && cta.mon === a.mon) a.cuenta = cta.id;
+      if (viejo && viejo.mov && !a.pago) a.mov = viejo.mov;
       if (viejo) { a.id = viejo.id; a.creado = viejo.creado; estado.deudas[estado.deudas.indexOf(viejo)] = a; }
       else { a.id = L.uid(); a.creado = Date.now(); estado.deudas.push(a); }
       guardar(); cerrar(); pintar(); aviso('Guardado');
@@ -917,15 +1007,31 @@
         if (e.target.name === 'cuenta') d.mon = cta.mon;
         const cats = estado.categorias[d.tipo];
         if (!cats.some(function (c) { return c.id === d.cat; })) d.cat = cats[0].id;
+        // "Otra persona": se suma a las opciones y queda marcada
+        const otra = String(d.otra || '').trim();
+        if (d.tipo === 'gasto' && otra) {
+          d.con = d.con || [];
+          const conocido = nombresConocidos(d).filter(function (x) { return L.claveDe(x) === L.claveDe(otra); })[0];
+          if (!conocido) d.extras = (d.extras || []).concat(otra);
+          if (!d.con.some(function (x) { return L.claveDe(x) === L.claveDe(otra); })) d.con.push(conocido || otra);
+        }
+        d.otra = '';
       }
+    }
+    if (hoja.tipo === 'deuda') {
+      const c = L.cuentaDe(estado, hoja.d.cuenta);
+      if (!c || c.mon !== hoja.d.mon) hoja.d.cuenta = '';
     }
     pintarHoja();
   });
   // mientras se tipea el monto, se actualiza el estimado del campo de al lado
   document.addEventListener('input', function (e) {
-    if (e.target.name !== 'monto' || !hoja) return;
-    const i = $('#hoja [data-estima]');
-    if (i) i.placeholder = estimado(e.target.value, i.dataset.de, i.dataset.a);
+    if (!hoja) return;
+    if (e.target.name === 'monto') {
+      const i = $('#hoja [data-estima]');
+      if (i) i.placeholder = estimado(e.target.value, i.dataset.de, i.dataset.a);
+    }
+    if (e.target.name === 'monto' || e.target.hasAttribute('data-parte')) actualizarReparto();
   });
   window.addEventListener('hashchange', function () {
     if (hoja) cerrar();

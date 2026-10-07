@@ -105,6 +105,19 @@
     return Math.round(x.monto * (x.tc || 1));
   }
 
+  /* Un gasto compartido guarda lo que se pagó entero (eso es lo que sale de la cuenta)
+     y en `partes` lo que le toca a cada otra persona. Lo mío es lo que sobra:
+     eso es lo que cuenta para el presupuesto y el resumen del mes. */
+  function propio(m) {
+    let o = m.monto;
+    for (const p of m.partes || []) o -= p.monto;
+    return o;
+  }
+  function aSolesPropio(m) {
+    const t = aSoles(m);
+    return m.partes && m.partes.length ? Math.round(t * propio(m) / m.monto) : t;
+  }
+
   // Lo que el movimiento mueve en su cuenta, en la moneda de la cuenta.
   function enCuenta(m) {
     return m.monCuenta && m.monCuenta !== m.mon ? m.cobrado : m.monto;
@@ -145,6 +158,7 @@
   function usosCuenta(estado, id) {
     let n = 0;
     for (const m of estado.movs) if (m.cuenta === id || m.destino === id) n++;
+    for (const d of estado.deudas || []) if (d.cuenta === id) n++;
     return n;
   }
 
@@ -162,6 +176,8 @@
         s[m.cuenta] += (m.tipo === 'ingreso' ? 1 : -1) * enCuenta(m);
       }
     }
+    // un pago de una deuda que entró a (o salió de) una cuenta también la mueve
+    for (const d of estado.deudas || []) if (d.cuenta && d.cuenta in s) s[d.cuenta] -= d.monto;
     const r = { filas: [], PEN: 0, USD: 0, total: 0 };
     for (const c of estado.cuentas) {
       r.filas.push({ id: c.id, nombre: c.nombre, mon: c.mon, saldo: s[c.id] });
@@ -195,8 +211,8 @@
     for (const m of estado.movs) {
       if (mesDe(m.fecha) !== mes || m.tipo === 'transferencia') continue;
       const g = m.tipo === 'ingreso' ? r.ingresos : r.gastos;
-      const s = aSoles(m);
-      g[m.mon] += m.monto;
+      const s = aSolesPropio(m);
+      g[m.mon] += propio(m);
       g.total += s;
       if (m.tipo === 'gasto') porCat[m.cat] = (porCat[m.cat] || 0) + s;
       r.n++;
@@ -228,7 +244,7 @@
     return Object.keys(dias).sort().reverse().map(function (f) {
       const movs = dias[f].sort(function (a, b) { return (b.creado || 0) - (a.creado || 0); });
       let neto = 0;
-      for (const m of movs) if (m.tipo !== 'transferencia') neto += (m.tipo === 'ingreso' ? 1 : -1) * aSoles(m);
+      for (const m of movs) if (m.tipo !== 'transferencia') neto += (m.tipo === 'ingreso' ? 1 : -1) * aSolesPropio(m);
       return { fecha: f, movs: movs, neto: neto };
     });
   }
@@ -238,7 +254,7 @@
     const gastado = {};
     for (const m of estado.movs) {
       if (m.tipo !== 'gasto' || mesDe(m.fecha) !== mes) continue;
-      gastado[m.cat] = (gastado[m.cat] || 0) + aSoles(m);
+      gastado[m.cat] = (gastado[m.cat] || 0) + aSolesPropio(m);
     }
     const r = { filas: [], topeTotal: 0, gastadoConTope: 0, disponible: 0, hayTopes: false };
     for (const c of estado.categorias.gasto) {
@@ -333,6 +349,37 @@
     return r;
   }
 
+  /* Reparte un gasto entre los demás y yo. `lista` trae a cada persona con su parte
+     fija (en céntimos) o null; los que no la tienen se reparten en partes iguales
+     con yo lo que quede. El redondeo sobrante me toca a mí: nadie paga de más. */
+  function repartir(monto, lista) {
+    const vacio = { ok: false, error: '', partes: [], mia: null };
+    if (!monto || !lista.length) return vacio;
+    let fijos = 0, libres = 0;
+    for (const x of lista) { if (x.fijo) fijos += x.fijo; else libres++; }
+    const resto = monto - fijos;
+    if (resto < 0) return { ok: false, error: 'Lo que les toca a ellos suma más que el gasto.', partes: [], mia: null };
+    const base = Math.floor(resto / (libres + 1));
+    const partes = lista.map(function (x) { return { persona: x.persona, monto: x.fijo || base }; });
+    if (partes.some(function (p) { return p.monto <= 0; })) return { ok: false, error: 'Es muy poco para repartirlo.', partes: [], mia: null };
+    let suman = 0;
+    for (const p of partes) suman += p.monto;
+    return { ok: true, error: '', partes: partes, mia: monto - suman };
+  }
+
+  /* Deja las deudas de un gasto compartido como dicen sus `partes`: borra las que
+     había de ese gasto y las crea de nuevo. Los pagos son apuntes aparte y no se tocan. */
+  function sincronizarPartes(estado, m) {
+    estado.deudas = estado.deudas.filter(function (d) { return d.mov !== m.id; });
+    for (const p of m.partes || []) {
+      const previa = estado.deudas.filter(function (x) { return claveDe(x.persona) === claveDe(p.persona); })[0];
+      estado.deudas.push({
+        id: uid(), persona: previa ? previa.persona : p.persona, monto: p.monto, mon: m.mon,
+        nota: m.nota || nombreCat(estado, 'gasto', m.cat), fecha: m.fecha, pago: false, creado: m.creado || Date.now(), mov: m.id
+      });
+    }
+  }
+
   // Lo que me deben y lo que debo, sumado por moneda.
   function totalDeudas(estado) {
     const r = { meDeben: { PEN: 0, USD: 0 }, debo: { PEN: 0, USD: 0 } };
@@ -397,6 +444,13 @@
         cuenta: cta.id, cat: texto(m.cat), nota: texto(m.nota, 200), fecha: m.fecha,
         creado: typeof m.creado === 'number' ? m.creado : 0
       };
+      if (m.tipo === 'gasto' && Array.isArray(m.partes) && m.partes.length) {
+        const partes = m.partes.filter(function (p) { return p && texto(p.persona).trim() && entero(p.monto) && p.monto > 0; })
+          .map(function (p) { return { persona: texto(p.persona.trim(), 40), monto: p.monto }; });
+        let suman = 0;
+        for (const p of partes) suman += p.monto;
+        if (partes.length === m.partes.length && suman <= m.monto) limpio.partes = partes;
+      }
       if (m.tipo === 'transferencia') {
         const dest = cuentaDe(e, m.destino);
         if (!dest || dest.id === cta.id) continue;
@@ -437,10 +491,15 @@
     }
     for (const d of Array.isArray(o.deudas) ? o.deudas : []) {
       if (!d || !texto(d.persona).trim() || !entero(d.monto) || d.monto === 0 || !SIMBOLO[d.mon] || !FECHA.test(d.fecha)) continue;
-      e.deudas.push({
+      const ap = {
         id: texto(d.id) || uid(), persona: texto(d.persona.trim(), 40), monto: d.monto, mon: d.mon,
         nota: texto(d.nota, 200), fecha: d.fecha, pago: d.pago === true, creado: typeof d.creado === 'number' ? d.creado : 0
-      });
+      };
+      const cta = d.pago === true ? cuentaDe(e, d.cuenta) : null;
+      if (cta && cta.mon === d.mon) ap.cuenta = cta.id;
+      const gasto = typeof d.mov === 'string' ? e.movs.filter(function (m) { return m.id === d.mov && m.partes; })[0] : null;
+      if (gasto && d.pago !== true) ap.mov = gasto.id;
+      e.deudas.push(ap);
     }
     return { ok: true, estado: e };
   }
@@ -499,6 +558,7 @@
     mov('gasto', 286.4, 'c-mercado', 'Compra de la semana', dia(mes, 1), 'PEN', 'k-scotiabank');
     mov('gasto', 18, 'c-comida', 'Menú', dia(mes, 1), 'PEN', 'k-efectivo');
     mov('gasto', 24.5, 'c-transporte', 'Taxi', dia(mes, 1));
+    e.movs[e.movs.length - 1].partes = [{ persona: 'Andrea', monto: 1225 }];
     mov('gasto', 20, 'c-suscripciones', 'Claude', dia(mes, 1), 'USD');
     mov('gasto', 189.9, 'c-servicios', 'Luz e internet', dia(mes, 1));
     mov('gasto', 95, 'c-ocio', 'Cine y cena', dia(mes, 1), 'PEN', 'k-scotiabank');
@@ -515,7 +575,7 @@
         aportes: [{ id: 'a3', monto: 65000, fecha: dia(antes, 20), nota: '', tc: 3.52 }] }
     ];
     e.deudas = [
-      { id: 'q1', persona: 'Andrea', monto: 1250, mon: 'PEN', nota: 'Taxi al aeropuerto', fecha: dia(mes, 1), pago: false, creado: 1 },
+      { id: 'q1', persona: 'Andrea', monto: 1225, mon: 'PEN', nota: 'Taxi', fecha: dia(mes, 1), pago: false, creado: 1, mov: 'd6' },
       { id: 'q2', persona: 'Andrea', monto: 900, mon: 'PEN', nota: 'Taxi de regreso', fecha: dia(antes, 20), pago: false, creado: 2 },
       { id: 'q3', persona: 'Andrea', monto: -900, mon: 'PEN', nota: '', fecha: dia(mes, 1), pago: true, creado: 3 },
       { id: 'q4', persona: 'Mamá', monto: -4500, mon: 'PEN', nota: 'Mi parte del regalo', fecha: dia(antes, 8), pago: false, creado: 4 }
@@ -530,7 +590,8 @@
     convertir: convertir, enCuenta: enCuenta, cuentaDe: cuentaDe, usosCuenta: usosCuenta, saldos: saldos,
     estadoInicial: estadoInicial, nombreCat: nombreCat, usosCat: usosCat, resumenMes: resumenMes,
     diasDelMes: diasDelMes, presupuestoMes: presupuestoMes, progresoMeta: progresoMeta,
-    tipoDeuda: tipoDeuda, ROTULO_DEUDA: ROTULO_DEUDA, deudasPorPersona: deudasPorPersona, abiertos: abiertos,
+    tipoDeuda: tipoDeuda, ROTULO_DEUDA: ROTULO_DEUDA, deudasPorPersona: deudasPorPersona, abiertos: abiertos, propio: propio, aSolesPropio: aSolesPropio,
+    repartir: repartir, sincronizarPartes: sincronizarPartes,
     totalDeudas: totalDeudas, textoSaldo: textoSaldo, claveDe: claveDe,
     validar: validar, aCSV: aCSV, demo: demo
   };
