@@ -351,7 +351,8 @@
 
   /* Reparte un gasto entre los demás y yo. `lista` trae a cada persona con su parte
      fija (en céntimos) o null; los que no la tienen se reparten en partes iguales
-     con yo lo que quede. El redondeo sobrante me toca a mí: nadie paga de más. */
+     con yo lo que quede. A cada persona se le sube a la siguiente décima (8.33 → 8.40):
+     el redondeo va a favor de quien pagó, y lo que reste es mi parte. */
   function repartir(monto, lista) {
     const vacio = { ok: false, error: '', partes: [], mia: null };
     if (!monto || !lista.length) return vacio;
@@ -359,7 +360,8 @@
     for (const x of lista) { if (x.fijo) fijos += x.fijo; else libres++; }
     const resto = monto - fijos;
     if (resto < 0) return { ok: false, error: 'Lo que les toca a ellos suma más que el gasto.', partes: [], mia: null };
-    const base = Math.floor(resto / (libres + 1));
+    let base = Math.ceil(resto / (libres + 1) / 10) * 10;
+    if (base * libres > resto) base = Math.floor(resto / (libres + 1));   // no alcanza para redondear: reparto exacto
     const partes = lista.map(function (x) { return { persona: x.persona, monto: x.fijo || base }; });
     if (partes.some(function (p) { return p.monto <= 0; })) return { ok: false, error: 'Es muy poco para repartirlo.', partes: [], mia: null };
     let suman = 0;

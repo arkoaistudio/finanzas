@@ -211,7 +211,7 @@ if (location.hostname !== '127.0.0.1' && location.hostname !== 'localhost') thro
     q('#hoja [name=con][value=Andrea]').click();
     ok('al marcar a Andrea aparece su parte y el resumen dice 12.50', q('#hoja [name="parte:Andrea"]') && q('#hoja [name="parte:Andrea"]').placeholder === '12.50' && q('#reparto-resumen').textContent.includes('tu parte es S/ 12.50'), q('#reparto-resumen') && q('#reparto-resumen').textContent);
     pon('otra', 'luis'); cambio(q('#hoja [name=otra]'));
-    ok('"Otra persona" queda marcada y reparte entre tres', q('#hoja [name=con][value=luis]') && q('#hoja [name=con][value=luis]').checked && q('#hoja [name="parte:luis"]').placeholder === '8.33' && q('#reparto-resumen').textContent.includes('S/ 8.34'), q('#reparto-resumen').textContent);
+    ok('"Otra persona" queda marcada y reparte entre tres, subiendo a la décima', q('#hoja [name=con][value=luis]') && q('#hoja [name=con][value=luis]').checked && q('#hoja [name="parte:luis"]').placeholder === '8.40' && q('#reparto-resumen').textContent.includes('tu parte es S/ 8.20'), q('#reparto-resumen').textContent);
     ok('el monto y la nota sobreviven a los cambios del formulario', q('#hoja [name=monto]').value === '25' && q('#hoja [name=nota]').value === 'Taxi a Miraflores');
     pon('parte:luis', '5');
     ok('una parte fija reparte el resto: 10.00 para Andrea y para mí', q('#hoja [name="parte:Andrea"]').placeholder === '10.00' && q('#reparto-resumen').textContent.includes('tu parte es S/ 10.00'), q('#reparto-resumen').textContent);

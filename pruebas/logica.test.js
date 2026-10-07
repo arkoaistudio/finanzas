@@ -284,13 +284,18 @@ test('deudas: los pagos descuentan primero lo más antiguo y queda lo que falta'
   assert.equal(deb[0].resto, -300);
 });
 
-test('repartir: partes iguales contigo, el redondeo me toca a mí', () => {
+test('repartir: partes iguales contigo, a ellos se les sube a la décima y a mí me queda el resto', () => {
   const r = L.repartir(2500, [{ persona: 'Andrea', fijo: null }]);
   assert.deepEqual(r.partes, [{ persona: 'Andrea', monto: 1250 }]);
   assert.equal(r.mia, 1250);
   const t = L.repartir(2500, [{ persona: 'Andrea', fijo: null }, { persona: 'Luis', fijo: null }]);
-  assert.deepEqual(t.partes.map(p => p.monto), [833, 833]);
-  assert.equal(t.mia, 834);
+  assert.deepEqual(t.partes.map(p => p.monto), [840, 840]);   // 8.33 sube a 8.40
+  assert.equal(t.mia, 820);
+  assert.deepEqual(L.repartir(1000, [{ persona: 'A', fijo: null }, { persona: 'B', fijo: null }]).partes.map(p => p.monto), [340, 340]);   // 3.33 → 3.40
+  assert.equal(L.repartir(1000, [{ persona: 'A', fijo: null }, { persona: 'B', fijo: null }]).mia, 320);
+  const justo = L.repartir(15, [{ persona: 'A', fijo: null }, { persona: 'B', fijo: null }]);   // 0.15 entre 3: subir no alcanza
+  assert.deepEqual(justo.partes.map(p => p.monto), [5, 5]);
+  assert.equal(justo.mia, 5);
   // una parte fija: el resto se reparte entre los demás y yo
   const f = L.repartir(2500, [{ persona: 'Andrea', fijo: null }, { persona: 'Luis', fijo: 500 }]);
   assert.deepEqual(f.partes.map(p => p.monto), [1000, 500]);
