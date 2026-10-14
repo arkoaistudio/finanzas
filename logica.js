@@ -193,10 +193,11 @@
     return r;
   }
 
-  /* Un movimiento de Arkos (`arkos: true`) usa sus propias categorías y no cuenta en
-     lo mío: ni en el resumen, ni en el presupuesto. Si no tiene cuenta (`cuenta: ''`)
-     es solo un registro del flujo de Arkos, por ejemplo algo de hace meses, y no mueve
-     ningún saldo. */
+  /* Un movimiento de Arkos (`arkos: true`) usa sus propias categorías y cuenta en mi
+     resumen como cualquier otro (la plata es mía); además se ve aparte en el flujo de
+     Arkos. No entra al presupuesto, que es de mis categorías. Si no tiene cuenta
+     (`cuenta: ''`) es algo de antes de usar la app o que no pasó por mis cuentas:
+     cuenta en su mes, pero no mueve ningún saldo. */
   function claveCats(m) {
     if (m.tipo === 'transferencia') return 'gasto';
     return m.arkos ? (m.tipo === 'ingreso' ? 'arkosIngreso' : 'arkosGasto') : m.tipo;
@@ -224,12 +225,12 @@
     };
     const porCat = {};
     for (const m of estado.movs) {
-      if (mesDe(m.fecha) !== mes || m.tipo === 'transferencia' || m.arkos) continue;
+      if (mesDe(m.fecha) !== mes || m.tipo === 'transferencia') continue;
       const g = m.tipo === 'ingreso' ? r.ingresos : r.gastos;
       const s = aSolesPropio(m);
       g[m.mon] += propio(m);
       g.total += s;
-      if (m.tipo === 'gasto') porCat[m.cat] = (porCat[m.cat] || 0) + s;
+      if (m.tipo === 'gasto') porCat[(m.arkos ? 'A:' : '') + m.cat] = (porCat[(m.arkos ? 'A:' : '') + m.cat] || 0) + s;
       r.n++;
     }
     for (const meta of estado.metas) {
@@ -239,23 +240,22 @@
     }
     r.queda = r.ingresos.total - r.gastos.total - r.ahorro;
     r.porCategoria = Object.keys(porCat).map(function (id) {
+      const ark = id.indexOf('A:') === 0;
       return {
-        cat: id, nombre: nombreCat(estado, 'gasto', id), total: porCat[id],
+        cat: ark ? id.slice(2) : id, arkos: ark, total: porCat[id],
+        nombre: ark ? 'Arkos · ' + nombreCat(estado, 'arkosGasto', id.slice(2)) : nombreCat(estado, 'gasto', id),
         pct: r.gastos.total ? Math.round(porCat[id] / r.gastos.total * 100) : 0
       };
     }).sort(function (a, b) { return b.total - a.total; });
     return r;
   }
 
-  /* Movimientos de un mes agrupados por día, lo más reciente arriba. `ambito`:
-     'mio' (lo mío, sin Arkos), 'cuentas' (lo mío más lo de Arkos que pasó por una
-     cuenta) o 'arkos' (solo Arkos). El neto del día es de lo mío, o de Arkos en 'arkos'. */
-  function diasDelMes(estado, mes, filtro, cuenta, ambito) {
-    ambito = ambito || 'mio';
+  // Movimientos de un mes agrupados por día, lo más reciente arriba. Con `soloArkos`, solo los de Arkos.
+  function diasDelMes(estado, mes, filtro, cuenta, soloArkos) {
     const dias = {};
     for (const m of estado.movs) {
       if (mesDe(m.fecha) !== mes) continue;
-      if (ambito === 'arkos' ? !m.arkos : m.arkos && (ambito === 'mio' || !m.cuenta)) continue;
+      if (soloArkos && !m.arkos) continue;
       if (filtro && filtro !== 'todo' && m.tipo !== filtro) continue;
       if (cuenta && m.cuenta !== cuenta && m.destino !== cuenta) continue;
       (dias[m.fecha] = dias[m.fecha] || []).push(m);
@@ -263,7 +263,7 @@
     return Object.keys(dias).sort().reverse().map(function (f) {
       const movs = dias[f].sort(function (a, b) { return (b.creado || 0) - (a.creado || 0); });
       let neto = 0;
-      for (const m of movs) if (m.tipo !== 'transferencia' && !!m.arkos === (ambito === 'arkos')) neto += (m.tipo === 'ingreso' ? 1 : -1) * aSolesPropio(m);
+      for (const m of movs) if (m.tipo !== 'transferencia') neto += (m.tipo === 'ingreso' ? 1 : -1) * aSolesPropio(m);
       return { fecha: f, movs: movs, neto: neto };
     });
   }
@@ -607,6 +607,44 @@
     return { ok: true, estado: e };
   }
 
+  /* Agrega a lo que hay los movimientos de un archivo (un historial armado aparte, o
+     un respaldo): no borra ni pisa nada. Las categorías se buscan por nombre y las que
+     no existen se crean; los movimientos que ya están (mismo id) se saltan. Devuelve el
+     estado nuevo sin tocar el de entrada. */
+  function agregar(estado, o) {
+    if (!o || typeof o !== 'object' || !Array.isArray(o.movs)) return { ok: false, error: 'Ese archivo no trae movimientos.' };
+    const r = validar({ v: o.v, tc: estado.tc, cuentas: estado.cuentas, categorias: o.categorias, movs: o.movs });
+    if (!r.ok) return r;
+    const e = JSON.parse(JSON.stringify(estado));
+    const ya = {};
+    for (const m of e.movs) ya[m.id] = true;
+    const mapa = {};   // clave de lista + id del archivo -> id en el estado
+    const catDe = function (clave, id) {
+      const k = clave + ':' + id;
+      if (mapa[k]) return mapa[k];
+      const nombre = nombreCat(r.estado, clave, id);
+      const lista = e.categorias[clave];
+      let c = lista.filter(function (x) { return x.nombre.toLowerCase() === nombre.toLowerCase(); })[0];
+      if (!c && nombre === 'Sin categoría') c = lista[lista.length - 1];
+      if (!c) {
+        const pre = { gasto: 'c-', ingreso: 'i-', arkosGasto: 'ag-', arkosIngreso: 'ai-' }[clave];
+        c = { id: pre + uid(), nombre: nombre };
+        lista.push(c);
+      }
+      return (mapa[k] = c.id);
+    };
+    let n = 0, repetidos = 0;
+    for (const m of r.estado.movs) {
+      if (ya[m.id]) { repetidos++; continue; }
+      if (m.tipo !== 'transferencia') m.cat = catDe(claveCats(m), m.cat);
+      delete m.partes;   // el archivo no trae a las personas
+      e.movs.push(m);
+      ya[m.id] = true;
+      n++;
+    }
+    return { ok: true, estado: e, n: n, repetidos: repetidos };
+  }
+
   // Hoja para Excel: el separador es ";" porque es el de Windows en es-PE.
   function aCSV(estado) {
     const celda = function (v) {
@@ -711,6 +749,6 @@
     repartir: repartir, sincronizarPartes: sincronizarPartes,
     renombrarPersona: renombrarPersona, usoPersona: usoPersona, eliminarPersona: eliminarPersona,
     totalDeudas: totalDeudas, textoSaldo: textoSaldo, claveDe: claveDe,
-    validar: validar, aCSV: aCSV, demo: demo
+    validar: validar, agregar: agregar, aCSV: aCSV, demo: demo
   };
 });

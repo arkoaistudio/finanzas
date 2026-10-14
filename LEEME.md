@@ -66,12 +66,18 @@ Tiene que estar publicada con https (GitHub Pages sirve y es gratis).
 - **Editar personas.** En la ficha, "Editar": renombra (en apuntes y gastos compartidos; si el nombre ya es de otra persona, se juntan) o elimina con todo su historial. Al eliminar, sus pagos que entraron a una cuenta se quitan y los gastos compartidos con ella vuelven a contar completos como tuyos.
 - **Pagos a una cuenta.** Un pago puede ligarse a una cuenta de la misma moneda (`cuenta` en el apunte): `saldos` la sube o baja; sin cuenta solo cambia lo que se debe. "Saldar" propone la cuenta con la que se pagó el gasto.
 - **Arkos.** Un gasto o ingreso puede ser "De Arkos" (`arkos: true`): usa sus
-  propias categorías (`arkosGasto`, `arkosIngreso`) y no cuenta en el resumen, el
-  presupuesto ni el neto del día. Si sale de una cuenta, su saldo se mueve igual.
-  Con "Fuera de mis cuentas" (`cuenta: ''`, solo para Arkos) no mueve ningún saldo:
-  sirve para cargar lo de meses pasados. La pantalla `#arkos` (enlazada desde el
-  Resumen) da el resultado del mes, el acumulado y el mes a mes (`flujoArkos`), y
-  cuánto salió de mis cuentas (`desdeCuentas`). No se comparte con personas.
+  propias categorías (`arkosGasto`, `arkosIngreso`) y cuenta en el resumen y en el
+  neto del día como cualquier otro (la plata es mía); en "Gasto por categoría" sale
+  como "Arkos · …". No entra al presupuesto. Con "Fuera de mis cuentas" (`cuenta: ''`,
+  solo para Arkos) cuenta en su mes pero no mueve ningún saldo: es para lo de antes
+  de usar la app. La pantalla `#arkos` (enlazada desde el Resumen) muestra solo Arkos:
+  resultado del mes, acumulado y mes a mes (`flujoArkos`). En Movimientos, el filtro
+  "Solo Arkos". No se comparte con personas.
+- **Agregar desde archivo.** Ajustes → "Agregar desde archivo" suma los movimientos
+  de un JSON (`agregar` en `logica.js`) sin borrar nada: categorías por nombre (crea
+  las que faltan) y salta los ids que ya están. Restaurar rechaza esos archivos
+  (`agregar: true`) para no reemplazar todo por error. Los historiales con datos
+  reales no van en este repo, que es público.
 - **Versión de los datos.** Va en `VERSION` de `logica.js` (hoy 4). `validar`
   migra lo guardado y los respaldos de versiones anteriores.
 - **Actualizar la app.** Al publicar cambios, subir el número de `CACHE` en

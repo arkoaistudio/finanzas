@@ -147,18 +147,17 @@
     }
     return h + pendientes.slice(0, 3).map(filaPersona).join('') + '</div>';
   }
-  // En el Resumen: cómo le va a Arkos este mes, aparte de lo mío.
+  // En el Resumen: cómo le va a Arkos este mes. Ya está sumado en lo de arriba; acá se ve solo.
   function seccionArkos() {
     const f = L.flujoArkos(estado);
-    const h = '<div class="encabezado"><span class="eyebrow">Arkos — aparte de lo tuyo</span>' +
-      '<a class="eyebrow enlace" href="#arkos">' + (f.meses.length ? 'Ver flujo' : 'Abrir') + '</a></div><div class="lista">';
+    const h = '<div class="encabezado"><span class="eyebrow">Arkos — incluido arriba</span>' +
+      '<a class="eyebrow enlace" href="#arkos">' + (f.meses.length ? 'Ver solo Arkos' : 'Abrir') + '</a></div><div class="lista">';
     if (!f.meses.length) {
-      return h + '<div class="fila"><span class="izq"><span class="meta libre">Marca un gasto o ingreso como de Arkos y se lleva aparte: ' +
-        'no cuenta en tu mes ni en tu presupuesto.</span></span></div></div>';
+      return h + '<div class="fila"><span class="izq"><span class="meta libre">Marca un gasto o ingreso como de Arkos: ' +
+        'cuenta en tu mes como cualquier otro y además lo ves aparte, con su flujo mes a mes.</span></span></div></div>';
     }
     const m = L.arkosMes(f, mes);
-    let sub = m.n ? L.fmt(m.ingresos.total, 'PEN') + ' entraron · ' + L.fmt(m.gastos.total, 'PEN') + ' salieron' : 'Nada anotado este mes';
-    if (m.desdeCuentas > 0) sub += ' · de tus cuentas salió ' + L.fmt(m.desdeCuentas, 'PEN');
+    const sub = m.n ? L.fmt(m.ingresos.total, 'PEN') + ' entraron · ' + L.fmt(m.gastos.total, 'PEN') + ' salieron' : 'Nada anotado este mes';
     return h + '<a class="fila" href="#arkos"><span class="izq"><b>Resultado del mes</b><span class="meta libre">' + sub + '</span></span>' +
       '<span class="der' + (m.neto > 0 ? ' ingreso' : m.neto < 0 ? ' negativo' : ' neutro') + '">' + (m.neto > 0 ? '+ ' : '') + L.fmt(m.neto, 'PEN') + '</span></a></div>';
   }
@@ -263,9 +262,10 @@
     const chipCta = function (id, texto) {
       return '<a class="chip' + (filtroCuenta === id ? ' on' : '') + '" href="#movimientos" data-accion="filtro-cuenta" data-id="' + esc(id) + '">' + esc(texto) + '</a>';
     };
-    let h = '<div class="filtros tira">' + chip('todo', 'Todo') + chip('gasto', 'Gastos') + chip('ingreso', 'Ingresos') + '</div>' +
+    let h = '<div class="filtros tira">' + chip('todo', 'Todo') + chip('gasto', 'Gastos') + chip('ingreso', 'Ingresos') +
+      (estado.movs.some(function (m) { return m.arkos; }) ? chip('arkos', 'Solo Arkos') : '') + '</div>' +
       '<div class="filtros tira">' + chipCta('', 'Todas las cuentas') + estado.cuentas.map(function (c) { return chipCta(c.id, c.nombre); }).join('') + '</div>';
-    const dias = L.diasDelMes(estado, mes, filtro, filtroCuenta, 'cuentas');
+    const dias = L.diasDelMes(estado, mes, filtro === 'arkos' ? 'todo' : filtro, filtroCuenta, filtro === 'arkos');
     if (!dias.length) {
       return h + '<section class="vacio"><span class="eyebrow gris">Sin movimientos</span>' +
         '<p>No hay nada anotado con este filtro en el mes.</p></section>';
@@ -361,15 +361,13 @@
     const anotar = '<div class="celda" style="border-bottom:0"><button class="btn prim ancho" data-accion="nuevo-mov" data-arkos="1">Anotar en Arkos</button></div>';
     if (!f.meses.length) {
       return '<section class="vacio"><span class="eyebrow gris">Sin movimientos</span>' +
-        '<p>Lleva aparte lo que entra y sale de Arkos.</p>' +
-        '<span class="meta">Al anotar un gasto o ingreso, marca "Arkos". No cuenta en tu mes ni en tu presupuesto. ' +
-        'Para lo de meses pasados, elige "Fuera de mis cuentas": queda en el flujo de Arkos y no mueve tus saldos de hoy.</span></section>' + anotar;
+        '<p>Mira solo lo que entra y sale de Arkos.</p>' +
+        '<span class="meta">Al anotar un gasto o ingreso, marca "De Arkos". Cuenta en tu mes como cualquier otro y acá lo ves aparte. ' +
+        'Para lo de antes de usar la app, elige "Fuera de mis cuentas": cuenta en su mes, pero no mueve tus saldos de hoy.</span></section>' + anotar;
     }
     const usd = function (g) { return g.USD ? '<span class="meta">' + L.fmt(g.USD, 'USD') + ' incl.</span>' : ''; };
     let h = '<section class="celda"><span class="eyebrow">Resultado del mes</span>' + num(m.neto, 'PEN', 'grande') +
-      '<p class="meta">Ingresos menos gastos de Arkos, en soles. Los dólares van al cambio con que se anotaron.' +
-      (m.desdeCuentas > 0 ? ' De tus cuentas salieron ' + L.fmt(m.desdeCuentas, 'PEN') + '.' :
-        m.desdeCuentas < 0 ? ' A tus cuentas entraron ' + L.fmt(-m.desdeCuentas, 'PEN') + '.' : '') + '</p></section>' +
+      '<p class="meta">Ingresos menos gastos de Arkos, en soles. Ya están sumados en tu resumen del mes.</p></section>' +
       '<section class="reticula tres">' +
       '<div class="celda"><span class="eyebrow">Ingresos</span>' + num(m.ingresos.total, 'PEN', 'medio') + usd(m.ingresos) + '</div>' +
       '<div class="celda"><span class="eyebrow">Gastos</span>' + num(m.gastos.total, 'PEN', 'medio') + usd(m.gastos) + '</div>' +
@@ -382,7 +380,7 @@
           L.fmt(c.total, 'PEN') + ' <span class="meta">' + c.pct + '%</span></span></span>' + barraAv(c.pct, 'cuero') + '</div>';
       }).join('') + '</div>';
     }
-    const dias = L.diasDelMes(estado, mes, 'todo', '', 'arkos');
+    const dias = L.diasDelMes(estado, mes, 'todo', '', true);
     h += '<div class="encabezado"><span class="eyebrow">Movimientos del mes</span></div>';
     if (dias.length) {
       for (const d of dias) {
@@ -435,6 +433,7 @@
       'Guarda un respaldo de vez en cuando en Archivos o iCloud: si pierdes el teléfono o borras la app, es lo único que los recupera.</p>' +
       '<div class="acciones"><button class="btn prim" data-accion="respaldo">Guardar respaldo</button>' +
       '<button class="btn sec" data-accion="restaurar">Restaurar</button>' +
+      '<button class="btn sec" data-accion="agregar">Agregar desde archivo</button>' +
       '<button class="btn sec" data-accion="excel">Exportar a Excel</button></div></div>' +
 
       cats('gasto', 'Categorías de gasto') + cats('ingreso', 'Categorías de ingreso') +
@@ -553,8 +552,8 @@
           campoMonto(d, 'Monto') +
           '<div class="campo"><span class="eyebrow">Moneda</span>' + seg('mon', MONEDAS, d.mon, true) + '</div>' +
           '<div class="campo"><span class="eyebrow">' + (d.tipo === 'ingreso' ? 'Entra a' : 'Sale de') + '</span>' + chips('cuenta', fuera ? '' : cta.id, null, ark) +
-          (ark ? '<span class="meta ayuda">No cuenta en tu mes ni en tu presupuesto. Si eliges una cuenta, su saldo se mueve. ' +
-            '"Fuera de mis cuentas" es para lo de meses pasados o lo que no pasó por tus cuentas: solo queda en el flujo de Arkos.</span>' : '') + '</div>' +
+          (ark ? '<span class="meta ayuda">Cuenta en tu mes como cualquier otro y además se ve en la pantalla de Arkos. ' +
+            '"Fuera de mis cuentas" es para lo de antes de usar la app: cuenta en su mes, pero no mueve tus saldos de hoy.</span>' : '') + '</div>' +
           (!fuera && cta.mon !== d.mon ? real('cobrado', (d.tipo === 'ingreso' ? 'Recibido en ' : 'Cobrado en ') + esc(cta.nombre), d.mon, cta.mon) : '') +
           '<div class="campo"><span class="eyebrow">Categoría</span><div class="tira">' + estado.categorias[L.claveCats({ tipo: d.tipo, arkos: ark })].map(function (c) {
             return '<label class="chip"><input type="radio" name="cat" value="' + esc(c.id) + '"' + (c.id === d.cat ? ' checked' : '') + '><span>' + esc(c.nombre) + '</span></label>';
@@ -761,13 +760,37 @@
     return true;
   }
 
-  function restaurar(archivo) {
+  /* "Agregar desde archivo": suma los movimientos de un historial sin borrar nada.
+     Lo usa el mismo selector de archivos que Restaurar; `paraAgregar` dice cuál fue. */
+  let paraAgregar = false;
+  function agregarArchivo(archivo) {
     const lector = new FileReader();
     lector.onerror = function () { aviso('No se pudo leer el archivo.', true); };
     lector.onload = function () {
       let r;
-      try { r = L.validar(JSON.parse(lector.result)); }
+      try { r = L.agregar(estado, JSON.parse(lector.result)); }
+      catch (e) { r = { ok: false, error: 'Ese archivo no trae movimientos.' }; }
+      if (!r.ok) return aviso(r.error, true);
+      if (!r.n) return aviso(r.repetidos ? 'Esos ' + r.repetidos + ' movimientos ya estaban.' : 'El archivo no trae movimientos.', true);
+      if (!confirm('Se agregan ' + r.n + (r.n === 1 ? ' movimiento' : ' movimientos') +
+        (r.repetidos ? ' (' + r.repetidos + ' ya estaban y se saltan)' : '') + '.\n\nNo se borra ni se cambia nada de lo que ya tienes. ¿Agregar?')) return;
+      estado = r.estado;
+      guardar();
+      pintar();
+      aviso(r.n + ' movimientos agregados');
+    };
+    lector.readAsText(archivo);
+  }
+
+  function restaurar(archivo) {
+    const lector = new FileReader();
+    lector.onerror = function () { aviso('No se pudo leer el archivo.', true); };
+    lector.onload = function () {
+      let r, o = null;
+      try { o = JSON.parse(lector.result); r = L.validar(o); }
       catch (e) { r = { ok: false, error: 'Ese archivo no es un respaldo de esta app.' }; }
+      // un historial para agregar no es un respaldo: restaurarlo borraría todo lo demás
+      if (o && o.agregar === true) r = { ok: false, error: 'Ese archivo es para "Agregar desde archivo", no para Restaurar.' };
       if (!r.ok) return aviso(r.error, true);
       const n = r.estado;
       if (!confirm('El respaldo trae ' + n.movs.length + ' movimientos y ' + n.metas.length + ' metas.\n\n' +
@@ -941,7 +964,8 @@
       guardar(); pintar();
     },
     excel: function () { entregar('finanzas-' + L.hoyISO() + '.csv', L.aCSV(estado), 'text/csv'); },
-    restaurar: function () { const i = $('#archivo'); i.value = ''; i.click(); },
+    restaurar: function () { paraAgregar = false; const i = $('#archivo'); i.value = ''; i.click(); },
+    agregar: function () { paraAgregar = true; const i = $('#archivo'); i.value = ''; i.click(); },
     'borrar-todo': function () {
       if (!confirm('Se borran los ' + estado.movs.length + ' movimientos, los topes y las metas de este celular. No se puede deshacer.\n\n¿Borrar todo?')) return;
       estado = L.estadoInicial();
@@ -1109,7 +1133,7 @@
     envios[e.target.dataset.form](new FormData(e.target));
   });
   document.addEventListener('change', function (e) {
-    if (e.target.id === 'archivo') { if (e.target.files[0]) restaurar(e.target.files[0]); return; }
+    if (e.target.id === 'archivo') { if (e.target.files[0]) (paraAgregar ? agregarArchivo : restaurar)(e.target.files[0]); return; }
     if (!e.target.matches('[data-repinta]') || !hoja) return;
     leerBorrador();
     hoja.error = '';

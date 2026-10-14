@@ -297,13 +297,16 @@ if (location.hostname !== '127.0.0.1' && location.hostname !== 'localhost') thro
     pon('monto', '180'); pon('fecha', Lg.hoyISO());
     enviar();
     ok('lo de Arkos pagado con BCP baja su saldo', saldoBCP() === bcpA - 18000, [saldoBCP(), bcpA]);
-    ok('pero no cuenta en mi resumen ni en mi presupuesto', JSON.stringify(Lg.resumenMes(est(), mesHoy)) === resA && JSON.stringify(Lg.presupuestoMes(est(), mesHoy)) === presA);
+    ok('cuenta en mis gastos del mes, pero no en mi presupuesto', Lg.resumenMes(est(), mesHoy).gastos.total === JSON.parse(resA).gastos.total + 18000 && JSON.stringify(Lg.presupuestoMes(est(), mesHoy)) === presA);
     ok('el mes a mes trae los dos meses', qq('#vista [data-accion=ir-mes]').length === 2);
     await ir('#movimientos');
     accion('filtro', '[data-f="todo"]');
     ok('en Movimientos sale marcado como de Arkos', texto().includes('Arkos · BCP'));
+    accion('filtro', '[data-f="arkos"]');
+    ok('el filtro "Solo Arkos" deja solo lo de Arkos', qq('#vista [data-accion=editar-mov]').length === 1 && texto().includes('Arkos · BCP'));
+    accion('filtro', '[data-f="todo"]');
     await ir('#resumen');
-    ok('el Resumen trae la línea de Arkos', texto().includes('Arkos — aparte de lo tuyo') && texto().includes('de tus cuentas salió S/ 180.00'));
+    ok('el Resumen trae la línea de Arkos y su categoría', texto().includes('Arkos — incluido arriba') && texto().includes('Arkos · Publicidad'));
     // pasar uno de fuera a "Mío" obliga a elegir una cuenta
     await ir('#arkos');
     accion('ir-mes', '[data-mes="2026-05"]');

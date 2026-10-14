@@ -406,10 +406,16 @@ function conArkos() {
   return e;
 }
 
-test('arkos: no cuenta en mi resumen ni en mi presupuesto', () => {
+test('arkos: cuenta en mi resumen (la plata es mía), pero no en mi presupuesto', () => {
   const sin = base(), con = conArkos();
-  assert.deepEqual(L.resumenMes(con, '2026-10'), L.resumenMes(sin, '2026-10'));
+  const a = L.resumenMes(sin, '2026-10'), b = L.resumenMes(con, '2026-10');
+  assert.equal(b.ingresos.total, a.ingresos.total + 35000);
+  assert.equal(b.gastos.total, a.gastos.total + 18000);
+  assert.equal(b.n, a.n + 2);
+  assert.ok(b.porCategoria.some(function (c) { return c.nombre === 'Arkos · Publicidad' && c.arkos && c.total === 18000; }));
   assert.deepEqual(L.presupuestoMes(con, '2026-10'), L.presupuestoMes(sin, '2026-10'));
+  // lo de hace meses fuera de mis cuentas también cuenta en su mes
+  assert.equal(L.resumenMes(con, '2026-06').gastos.total, 18130);
 });
 
 test('arkos: lo pagado con una cuenta mueve su saldo; lo de fuera no mueve nada', () => {
@@ -439,16 +445,47 @@ test('arkos: flujo mes a mes con acumulado y lo que salió de mis cuentas', () =
   assert.equal(ago.acumulado, -18130 + 14060);
 });
 
-test('arkos: en movimientos, lo de fuera solo aparece en su pantalla', () => {
+test('arkos: en movimientos salen con lo mío, y se pueden ver solos', () => {
   const e = conArkos();
   const ids = function (dias) { return [].concat.apply([], dias.map(function (d) { return d.movs.map(function (m) { return m.id; }); })).sort(); };
-  assert.equal(ids(L.diasDelMes(e, '2026-10', 'todo', '', 'mio')).indexOf('a3'), -1);
-  assert.ok(ids(L.diasDelMes(e, '2026-10', 'todo', '', 'cuentas')).indexOf('a3') >= 0);
-  assert.deepEqual(ids(L.diasDelMes(e, '2026-06', 'todo', '', 'cuentas')), []);
-  assert.deepEqual(ids(L.diasDelMes(e, '2026-06', 'todo', '', 'arkos')), ['a1']);
-  // el neto del día con un gasto de Arkos no cambia
-  const dia = L.diasDelMes(e, '2026-10', 'todo', '', 'cuentas').filter(function (d) { return d.fecha === '2026-10-07'; })[0];
-  assert.equal(dia.neto, 0);
+  assert.ok(ids(L.diasDelMes(e, '2026-10', 'todo', '')).indexOf('a3') >= 0);
+  assert.deepEqual(ids(L.diasDelMes(e, '2026-06', 'todo', '')), ['a1']);
+  assert.deepEqual(ids(L.diasDelMes(e, '2026-10', 'todo', '', true)), ['a3', 'a4']);
+  assert.deepEqual(ids(L.diasDelMes(e, '2026-10', 'ingreso', '', true)), ['a4']);
+  const dia = L.diasDelMes(e, '2026-10', 'todo', '').filter(function (d) { return d.fecha === '2026-10-07'; })[0];
+  assert.equal(dia.neto, -18000);
+});
+
+test('agregar: suma un historial sin tocar lo que hay, crea categorías y salta repetidos', () => {
+  const e = base();
+  const archivo = {
+    v: 4, agregar: true,
+    categorias: { arkosGasto: [{ id: 'x1', nombre: 'Fal ai' }, { id: 'x2', nombre: 'publicidad' }], arkosIngreso: [{ id: 'x3', nombre: 'Ventas' }] },
+    movs: [
+      { id: 'h1', tipo: 'gasto', arkos: true, monto: 3965, mon: 'PEN', cuenta: '', cat: 'x1', nota: '10 dólares créditos', fecha: '2026-04-14' },
+      { id: 'h2', tipo: 'gasto', arkos: true, monto: 1000, mon: 'PEN', cuenta: '', cat: 'x2', nota: '', fecha: '2026-04-15' },
+      { id: 'h3', tipo: 'ingreso', arkos: true, monto: 41437, mon: 'PEN', cuenta: '', cat: 'x3', nota: 'Stripe', fecha: '2026-08-09' },
+      { id: '1', tipo: 'gasto', monto: 1, mon: 'PEN', cuenta: '', cat: 'c-comida', fecha: '2026-10-01' }   // ya está
+    ]
+  };
+  const antes = JSON.stringify(e);
+  const r = L.agregar(e, archivo);
+  assert.equal(r.ok, true);
+  assert.equal(JSON.stringify(e), antes);   // el de entrada no se toca
+  assert.equal(r.n, 3);
+  assert.equal(r.repetidos, 1);
+  assert.equal(r.estado.movs.length, e.movs.length + 3);
+  const fal = r.estado.categorias.arkosGasto.filter(function (c) { return c.nombre === 'Fal ai'; })[0];
+  assert.ok(fal && fal.id.indexOf('ag-') === 0);
+  assert.equal(r.estado.categorias.arkosGasto.filter(function (c) { return c.nombre.toLowerCase() === 'publicidad'; }).length, 1);
+  const h1 = r.estado.movs.filter(function (m) { return m.id === 'h1'; })[0];
+  assert.equal(h1.cat, fal.id);
+  assert.equal(h1.cuenta, '');
+  assert.equal(r.estado.movs.filter(function (m) { return m.id === 'h2'; })[0].cat, 'ag-publicidad');
+  assert.equal(r.estado.movs.filter(function (m) { return m.id === 'h3'; })[0].cat, 'ai-ventas');
+  assert.deepEqual(L.saldos(r.estado), L.saldos(e));   // lo de fuera no mueve saldos
+  assert.equal(L.validar(JSON.parse(JSON.stringify(r.estado))).ok, true);
+  assert.equal(L.agregar(e, { hola: 1 }).ok, false);
 });
 
 test('arkos: pasa por el respaldo, sin cuenta se queda sin cuenta y sin reparto', () => {
