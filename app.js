@@ -6,7 +6,7 @@
   const L = window.Logica;
   const CLAVE = 'finanzas.v1';
   const DEMO = /[?&]demo\b/.test(location.search);   // datos de muestra, no guarda
-  const VISTAS = ['resumen', 'movimientos', 'presupuesto', 'metas', 'deudas', 'ajustes'];
+  const VISTAS = ['resumen', 'movimientos', 'presupuesto', 'metas', 'deudas', 'arkos', 'ajustes'];
   const DIAS_SIN_RESPALDO = 14;
 
   const $ = function (s, r) { return (r || document).querySelector(s); };
@@ -79,8 +79,9 @@
     return t.join(' · ');
   }
   function tcTexto() { return estado.tc.toFixed(3).replace(/0$/, ''); }
-  function filaMov(m) {
-    const cta = L.cuentaDe(estado, m.cuenta);
+  // `enArkos`: la fila va en la pantalla de Arkos y no hace falta marcarla.
+  function filaMov(m, enArkos) {
+    const cta = m.arkos && !m.cuenta ? { nombre: 'Fuera de mis cuentas' } : L.cuentaDe(estado, m.cuenta);
     const abre = '<button class="fila" data-accion="editar-mov" data-id="' + esc(m.id) + '"><span class="izq"><b>';
     if (m.tipo === 'transferencia') {
       const dest = L.cuentaDe(estado, m.destino);
@@ -99,7 +100,7 @@
     }
     const comp = m.partes && m.partes.length;
     if (comp) sub += '<span class="meta">Tu parte ' + L.fmt(L.propio(m), m.mon) + '</span>';
-    return abre + esc(L.nombreCat(estado, m.tipo, m.cat)) + '</b><span class="meta">' + esc(cta ? cta.nombre : '') +
+    return abre + esc(L.nombreCat(estado, L.claveCats(m), m.cat)) + '</b><span class="meta">' + (m.arkos && enArkos !== true ? 'Arkos · ' : '') + esc(cta ? cta.nombre : '') +
       (m.nota ? ' · ' + esc(m.nota) : '') + (comp ? ' · con ' + esc(m.partes.map(function (p) { return p.persona; }).join(', ')) : '') + '</span></span>' +
       '<span class="der' + (ing ? ' ingreso' : '') + '">' + (ing ? '+ ' : '') + L.fmt(m.monto, m.mon) + sub + '</span></button>';
   }
@@ -146,6 +147,21 @@
     }
     return h + pendientes.slice(0, 3).map(filaPersona).join('') + '</div>';
   }
+  // En el Resumen: cómo le va a Arkos este mes, aparte de lo mío.
+  function seccionArkos() {
+    const f = L.flujoArkos(estado);
+    const h = '<div class="encabezado"><span class="eyebrow">Arkos — aparte de lo tuyo</span>' +
+      '<a class="eyebrow enlace" href="#arkos">' + (f.meses.length ? 'Ver flujo' : 'Abrir') + '</a></div><div class="lista">';
+    if (!f.meses.length) {
+      return h + '<div class="fila"><span class="izq"><span class="meta libre">Marca un gasto o ingreso como de Arkos y se lleva aparte: ' +
+        'no cuenta en tu mes ni en tu presupuesto.</span></span></div></div>';
+    }
+    const m = L.arkosMes(f, mes);
+    let sub = m.n ? L.fmt(m.ingresos.total, 'PEN') + ' entraron · ' + L.fmt(m.gastos.total, 'PEN') + ' salieron' : 'Nada anotado este mes';
+    if (m.desdeCuentas > 0) sub += ' · de tus cuentas salió ' + L.fmt(m.desdeCuentas, 'PEN');
+    return h + '<a class="fila" href="#arkos"><span class="izq"><b>Resultado del mes</b><span class="meta libre">' + sub + '</span></span>' +
+      '<span class="der' + (m.neto > 0 ? ' ingreso' : m.neto < 0 ? ' negativo' : ' neutro') + '">' + (m.neto > 0 ? '+ ' : '') + L.fmt(m.neto, 'PEN') + '</span></a></div>';
+  }
   function vistaActual() {
     const h = location.hash.replace('#', '');
     return VISTAS.indexOf(h) >= 0 ? h : 'resumen';
@@ -159,7 +175,13 @@
 
   function pintarCabecera(v) {
     let h;
-    if (v === 'ajustes' || v === 'deudas') {
+    if (v === 'arkos') {
+      const n = L.nombreMes(mes);
+      h = '<a class="cuadro" href="#resumen" style="border-left:0;border-right:1px solid var(--regla)" aria-label="Volver">' + ICO.izq + '</a>' +
+        '<div class="titulo"><span class="eyebrow gris">Arkos — N° ' + n.numero + ' — ' + n.anio + (DEMO ? ' — Demo' : '') + '</span><h1>' + n.nombre + '</h1></div>' +
+        '<button class="cuadro" data-accion="mes" data-d="-1" aria-label="Mes anterior">' + ICO.izq + '</button>' +
+        '<button class="cuadro" data-accion="mes" data-d="1" aria-label="Mes siguiente">' + ICO.der + '</button>';
+    } else if (v === 'ajustes' || v === 'deudas') {
       h = '<a class="cuadro" href="#resumen" style="border-left:0;border-right:1px solid var(--regla)" aria-label="Volver">' + ICO.izq + '</a>' +
         '<div class="titulo"><span class="eyebrow gris">Finanzas</span><h1>' + (v === 'deudas' ? 'Personas' : 'Ajustes') + '</h1></div>';
     } else if (v === 'metas') {
@@ -210,9 +232,9 @@
     if (!r.n) {
       return h + '<section class="vacio"><span class="eyebrow gris">Sin movimientos</span>' +
         '<p>Todavía no hay nada anotado en este mes.</p>' +
-        '<span class="meta">Toca el botón + de abajo para registrar un gasto o un ingreso.</span></section>' + seccionCuentas() + seccionDeudas();
+        '<span class="meta">Toca el botón + de abajo para registrar un gasto o un ingreso.</span></section>' + seccionCuentas() + seccionDeudas() + seccionArkos();
     }
-    h += seccionCuentas() + seccionDeudas();
+    h += seccionCuentas() + seccionDeudas() + seccionArkos();
 
     if (r.porCategoria.length) {
       h += '<div class="encabezado"><span class="eyebrow">Gasto por categoría</span>' +
@@ -243,7 +265,7 @@
     };
     let h = '<div class="filtros tira">' + chip('todo', 'Todo') + chip('gasto', 'Gastos') + chip('ingreso', 'Ingresos') + '</div>' +
       '<div class="filtros tira">' + chipCta('', 'Todas las cuentas') + estado.cuentas.map(function (c) { return chipCta(c.id, c.nombre); }).join('') + '</div>';
-    const dias = L.diasDelMes(estado, mes, filtro, filtroCuenta);
+    const dias = L.diasDelMes(estado, mes, filtro, filtroCuenta, 'cuentas');
     if (!dias.length) {
       return h + '<section class="vacio"><span class="eyebrow gris">Sin movimientos</span>' +
         '<p>No hay nada anotado con este filtro en el mes.</p></section>';
@@ -333,6 +355,56 @@
     return h + '<div class="celda" style="border-bottom:0"><button class="btn sec ancho" data-accion="nueva-deuda">Nuevo apunte</button></div>';
   }
 
+  function vArkos() {
+    const f = L.flujoArkos(estado);
+    const m = L.arkosMes(f, mes);
+    const anotar = '<div class="celda" style="border-bottom:0"><button class="btn prim ancho" data-accion="nuevo-mov" data-arkos="1">Anotar en Arkos</button></div>';
+    if (!f.meses.length) {
+      return '<section class="vacio"><span class="eyebrow gris">Sin movimientos</span>' +
+        '<p>Lleva aparte lo que entra y sale de Arkos.</p>' +
+        '<span class="meta">Al anotar un gasto o ingreso, marca "Arkos". No cuenta en tu mes ni en tu presupuesto. ' +
+        'Para lo de meses pasados, elige "Fuera de mis cuentas": queda en el flujo de Arkos y no mueve tus saldos de hoy.</span></section>' + anotar;
+    }
+    const usd = function (g) { return g.USD ? '<span class="meta">' + L.fmt(g.USD, 'USD') + ' incl.</span>' : ''; };
+    let h = '<section class="celda"><span class="eyebrow">Resultado del mes</span>' + num(m.neto, 'PEN', 'grande') +
+      '<p class="meta">Ingresos menos gastos de Arkos, en soles. Los dólares van al cambio con que se anotaron.' +
+      (m.desdeCuentas > 0 ? ' De tus cuentas salieron ' + L.fmt(m.desdeCuentas, 'PEN') + '.' :
+        m.desdeCuentas < 0 ? ' A tus cuentas entraron ' + L.fmt(-m.desdeCuentas, 'PEN') + '.' : '') + '</p></section>' +
+      '<section class="reticula tres">' +
+      '<div class="celda"><span class="eyebrow">Ingresos</span>' + num(m.ingresos.total, 'PEN', 'medio') + usd(m.ingresos) + '</div>' +
+      '<div class="celda"><span class="eyebrow">Gastos</span>' + num(m.gastos.total, 'PEN', 'medio') + usd(m.gastos) + '</div>' +
+      '<div class="celda"><span class="eyebrow">Acumulado</span>' + num(m.acumulado, 'PEN', 'medio') + '<span class="meta">desde ' +
+        L.nombreMes(f.meses[0].mes).nombre.slice(0, 3).toLowerCase() + ' ' + L.nombreMes(f.meses[0].mes).anio + '</span></div>' +
+      '</section>';
+    if (m.porCategoria.length) {
+      h += '<div class="encabezado"><span class="eyebrow">Gasto por categoría</span></div><div class="lista">' + m.porCategoria.map(function (c) {
+        return '<div class="fila bloque"><span class="arriba"><b>' + esc(c.nombre) + '</b><span>' +
+          L.fmt(c.total, 'PEN') + ' <span class="meta">' + c.pct + '%</span></span></span>' + barraAv(c.pct, 'cuero') + '</div>';
+      }).join('') + '</div>';
+    }
+    const dias = L.diasDelMes(estado, mes, 'todo', '', 'arkos');
+    h += '<div class="encabezado"><span class="eyebrow">Movimientos del mes</span></div>';
+    if (dias.length) {
+      for (const d of dias) {
+        h += '<div class="dia"><span class="eyebrow">' + L.etiquetaDia(d.fecha) + '</span>' +
+          '<span class="meta">' + (d.neto > 0 ? '+ ' : '') + L.fmt(d.neto, 'PEN') + '</span></div>' +
+          '<div class="lista" style="border-top:0">' + d.movs.map(function (x) { return filaMov(x, true); }).join('') + '</div>';
+      }
+    } else {
+      h += '<div class="lista"><div class="fila"><span class="izq"><span class="meta libre">Nada anotado en este mes.</span></span></div></div>';
+    }
+    // mes a mes, lo más nuevo arriba; tocar uno lleva a ese mes
+    h += '<div class="encabezado"><span class="eyebrow">Mes a mes</span><span class="eyebrow gris">Neto / acumulado</span></div><div class="lista">' +
+      f.meses.slice().reverse().map(function (x) {
+        const n = L.nombreMes(x.mes);
+        return '<button class="fila" data-accion="ir-mes" data-mes="' + x.mes + '"' + (x.mes === mes ? ' style="background:var(--papel-2)"' : '') + '>' +
+          '<span class="izq"><b>' + n.nombre + ' ' + n.anio + '</b><span class="meta">+ ' + L.fmt(x.ingresos.total, 'PEN') + ' · − ' + L.fmt(x.gastos.total, 'PEN') + '</span></span>' +
+          '<span class="der' + (x.neto > 0 ? ' ingreso' : x.neto < 0 ? ' negativo' : ' neutro') + '">' + (x.neto > 0 ? '+ ' : '') + L.fmt(x.neto, 'PEN') +
+          '<span class="meta">' + L.fmt(x.acumulado, 'PEN') + '</span></span></button>';
+      }).join('') + '</div>';
+    return h + anotar;
+  }
+
   function vAjustes() {
     const dias = diasDesdeRespaldo();
     const cats = function (tipo, titulo) {
@@ -366,6 +438,7 @@
       '<button class="btn sec" data-accion="excel">Exportar a Excel</button></div></div>' +
 
       cats('gasto', 'Categorías de gasto') + cats('ingreso', 'Categorías de ingreso') +
+      cats('arkosGasto', 'Arkos — gastos') + cats('arkosIngreso', 'Arkos — ingresos') +
 
       '<div class="celda" style="border-bottom:0;padding-top:32px"><button class="btn peligro" data-accion="borrar-todo">Borrar todos los datos</button>' +
       '<p class="meta" style="margin-top:18px">' + estado.movs.length + ' movimientos guardados · versión ' + L.VERSION + '</p></div>';
@@ -450,8 +523,11 @@
       const d = hoja.d;
       const transf = d.tipo === 'transferencia';
       const cta = L.cuentaDe(estado, d.cuenta) || estado.cuentas[0];
-      const chips = function (nombre, valor, excluir) {
-        return '<div class="tira">' + estado.cuentas.filter(function (c) { return c.id !== excluir; }).map(function (c) {
+      const ark = !transf && d.para === 'arkos';
+      const fuera = ark && d.cuenta === '';   // de Arkos y sin pasar por mis cuentas
+      const chips = function (nombre, valor, excluir, conFuera) {
+        const lista = estado.cuentas.filter(function (c) { return c.id !== excluir; });
+        return '<div class="tira">' + (conFuera ? lista.concat({ id: '', nombre: 'Fuera de mis cuentas' }) : lista).map(function (c) {
           return '<label class="chip"><input type="radio" name="' + nombre + '" value="' + esc(c.id) + '"' + (c.id === valor ? ' checked' : '') +
             ' data-repinta><span>' + esc(c.nombre) + '</span></label>';
         }).join('') + '</div>';
@@ -473,13 +549,16 @@
           '<div class="campo"><span class="eyebrow">Va a</span>' + chips('destino', d.destino, cta.id) + '</div>' +
           (dest && dest.mon !== cta.mon ? real('llega', 'Llega a ' + esc(dest.nombre), cta.mon, dest.mon) : '');
       } else {
-        h += campoMonto(d, 'Monto') +
+        h += '<div class="campo"><span class="eyebrow">Es</span>' + seg('para', [['mio', 'Mío'], ['arkos', 'De Arkos']], ark ? 'arkos' : 'mio', true) + '</div>' +
+          campoMonto(d, 'Monto') +
           '<div class="campo"><span class="eyebrow">Moneda</span>' + seg('mon', MONEDAS, d.mon, true) + '</div>' +
-          '<div class="campo"><span class="eyebrow">' + (d.tipo === 'ingreso' ? 'Entra a' : 'Sale de') + '</span>' + chips('cuenta', cta.id) + '</div>' +
-          (cta.mon !== d.mon ? real('cobrado', (d.tipo === 'ingreso' ? 'Recibido en ' : 'Cobrado en ') + esc(cta.nombre), d.mon, cta.mon) : '') +
-          '<div class="campo"><span class="eyebrow">Categoría</span><div class="tira">' + estado.categorias[d.tipo].map(function (c) {
+          '<div class="campo"><span class="eyebrow">' + (d.tipo === 'ingreso' ? 'Entra a' : 'Sale de') + '</span>' + chips('cuenta', fuera ? '' : cta.id, null, ark) +
+          (ark ? '<span class="meta ayuda">No cuenta en tu mes ni en tu presupuesto. Si eliges una cuenta, su saldo se mueve. ' +
+            '"Fuera de mis cuentas" es para lo de meses pasados o lo que no pasó por tus cuentas: solo queda en el flujo de Arkos.</span>' : '') + '</div>' +
+          (!fuera && cta.mon !== d.mon ? real('cobrado', (d.tipo === 'ingreso' ? 'Recibido en ' : 'Cobrado en ') + esc(cta.nombre), d.mon, cta.mon) : '') +
+          '<div class="campo"><span class="eyebrow">Categoría</span><div class="tira">' + estado.categorias[L.claveCats({ tipo: d.tipo, arkos: ark })].map(function (c) {
             return '<label class="chip"><input type="radio" name="cat" value="' + esc(c.id) + '"' + (c.id === d.cat ? ' checked' : '') + '><span>' + esc(c.nombre) + '</span></label>';
-          }).join('') + '</div></div>' + (d.tipo === 'gasto' ? compartir(d) : '');
+          }).join('') + '</div></div>' + (d.tipo === 'gasto' && !ark ? compartir(d) : '');
       }
       return h + '<div class="dos">' + campoFecha('fecha', 'Fecha', d.fecha) + campoTexto('nota', 'Nota', d.nota, 'placeholder="Opcional" maxlength="200"') + '</div>' +
         errorHoja() + '<div class="pie-hoja"><button class="btn prim ancho">Guardar</button>' +
@@ -598,7 +677,8 @@
       const unica = estado.categorias[hoja.tipoCat].length <= 1;
       let pie = '';
       if (hoja.id && usos) pie = '<p class="meta nota-hoja">Tiene ' + usos + (usos === 1 ? ' movimiento' : ' movimientos') + '. Se puede renombrar, pero no borrar.</p>';
-      return topeHoja(hoja.id ? 'Editar categoría' : 'Nueva categoría de ' + hoja.tipoCat) + '<form data-form="cat">' +
+      const de = { gasto: 'gasto', ingreso: 'ingreso', arkosGasto: 'gasto de Arkos', arkosIngreso: 'ingreso de Arkos' }[hoja.tipoCat];
+      return topeHoja(hoja.id ? 'Editar categoría' : 'Nueva categoría de ' + de) + '<form data-form="cat">' +
         campoTexto('nombre', 'Nombre', hoja.d.nombre, 'maxlength="40"') + pie + errorHoja() +
         '<div class="pie-hoja"><button class="btn prim ancho">Guardar</button>' +
         (hoja.id && !usos && !unica ? '<button type="button" class="btn peligro ancho" data-accion="borrar-cat">Eliminar</button>' : '') + '</div></form>';
@@ -650,7 +730,7 @@
     const v = vistaActual();
     pintarCabecera(v);
     pintarBarra(v);
-    $('#vista').innerHTML = { resumen: vResumen, movimientos: vMovimientos, presupuesto: vPresupuesto, metas: vMetas, deudas: vDeudas, ajustes: vAjustes }[v]();
+    $('#vista').innerHTML = { resumen: vResumen, movimientos: vMovimientos, presupuesto: vPresupuesto, metas: vMetas, deudas: vDeudas, arkos: vArkos, ajustes: vAjustes }[v]();
   }
 
   let relojAviso = 0;
@@ -710,19 +790,22 @@
     'filtro-cuenta': function (d) { filtroCuenta = d.id || ''; pintar(); },
     'ver-cuenta': function (d) { filtroCuenta = d.id; filtro = 'todo'; location.hash = 'movimientos'; },
 
-    'nuevo-mov': function () {
-      // arranca en la última cuenta usada; si se mira otro mes, la fecha cae en ese mes
+    'nuevo-mov': function (dd) {
+      // arranca en la última cuenta usada; si se mira otro mes, la fecha cae en ese mes.
+      // Desde la pantalla de Arkos arranca como de Arkos.
       const hoy = L.hoyISO();
+      const ark = !!(dd && dd.arkos) || vistaActual() === 'arkos';
       let ultimo = null;
-      for (const m of estado.movs) if (m.tipo !== 'transferencia' && (!ultimo || (m.creado || 0) > (ultimo.creado || 0))) ultimo = m;
+      for (const m of estado.movs) if (m.tipo !== 'transferencia' && m.cuenta && (!ultimo || (m.creado || 0) > (ultimo.creado || 0))) ultimo = m;
       const cta = (ultimo && L.cuentaDe(estado, ultimo.cuenta)) || estado.cuentas[0];
       const otra = estado.cuentas.filter(function (c) { return c.id !== cta.id; })[0];
       abrir({
         tipo: 'mov', id: null, tc: estado.tc,
-        d: { tipo: 'gasto', monto: '', mon: cta.mon, cuenta: cta.id, destino: otra ? otra.id : '', cobrado: '', llega: '',
-          cat: estado.categorias.gasto[0].id, fecha: L.mesDe(hoy) === mes ? hoy : mes + '-01', nota: '', con: [], extras: [], otra: '' }
+        d: { tipo: 'gasto', para: ark ? 'arkos' : 'mio', monto: '', mon: cta.mon, cuenta: cta.id, destino: otra ? otra.id : '', cobrado: '', llega: '',
+          cat: estado.categorias[ark ? 'arkosGasto' : 'gasto'][0].id, fecha: L.mesDe(hoy) === mes ? hoy : mes + '-01', nota: '', con: [], extras: [], otra: '' }
       }, 'monto');
     },
+    'ir-mes': function (d) { mes = d.mes; pintar(); window.scrollTo(0, 0); },
     'editar-mov': function (d) {
       const m = estado.movs.filter(function (x) { return x.id === d.id; })[0];
       if (!m) return;
@@ -730,7 +813,7 @@
       const otra = estado.cuentas.filter(function (c) { return c.id !== m.cuenta; })[0];
       abrir({
         tipo: 'mov', id: m.id, tc: m.tc || estado.tc,
-        d: { tipo: m.tipo, monto: L.aTexto(m.monto), mon: m.mon, cuenta: m.cuenta, destino: m.destino || (otra ? otra.id : ''),
+        d: { tipo: m.tipo, para: m.arkos ? 'arkos' : 'mio', monto: L.aTexto(m.monto), mon: m.mon, cuenta: m.cuenta, destino: m.destino || (otra ? otra.id : ''),
           cobrado: m.monCuenta && !m.estimado ? L.aTexto(m.cobrado) : '',
           llega: transf && !m.estimado && m.llega !== m.monto ? L.aTexto(m.llega) : '',
           cat: transf ? estado.categorias.gasto[0].id : m.cat, fecha: m.fecha, nota: m.nota || '', con: [], extras: [], otra: '' }
@@ -874,11 +957,14 @@
       if (!monto) return fallo('Pon un monto mayor que cero.');
       const tipo = fd.get('tipo'), fecha = fd.get('fecha');
       if (!fecha) return fallo('Falta la fecha.');
+      const ark = tipo !== 'transferencia' && fd.get('para') === 'arkos';
+      const fuera = ark && fd.get('cuenta') === '';
       const cta = L.cuentaDe(estado, fd.get('cuenta'));
-      if (!cta) return fallo('Elige una cuenta.');
+      if (!cta && !fuera) return fallo('Elige una cuenta.');
       const viejo = hoja.id ? estado.movs.filter(function (x) { return x.id === hoja.id; })[0] : null;
       const m = { tipo: tipo, monto: monto, mon: tipo === 'transferencia' ? cta.mon : fd.get('mon'), tc: hoja.tc,
-        cuenta: cta.id, cat: '', nota: String(fd.get('nota') || '').trim(), fecha: fecha };
+        cuenta: fuera ? '' : cta.id, cat: '', nota: String(fd.get('nota') || '').trim(), fecha: fecha };
+      if (ark) m.arkos = true;
       if (tipo === 'transferencia') {
         const dest = L.cuentaDe(estado, fd.get('destino'));
         if (!dest || dest.id === cta.id) return fallo('Elige a qué cuenta va. Tiene que ser distinta de la que sale.');
@@ -889,13 +975,13 @@
       } else {
         if (!fd.get('cat')) return fallo('Elige una categoría.');
         m.cat = fd.get('cat');
-        const con = tipo === 'gasto' ? fd.getAll('con') : [];
+        const con = tipo === 'gasto' && !ark ? fd.getAll('con') : [];
         if (con.length) {
           const rep = L.repartir(monto, con.map(function (n) { return { persona: n, fijo: L.parseMonto(fd.get('parte:' + n)) }; }));
           if (!rep.ok) return fallo(rep.error || 'No se pudo repartir el gasto.');
           m.partes = rep.partes;
         }
-        if (cta.mon !== m.mon) {
+        if (!fuera && cta.mon !== m.mon) {
           // otra moneda que la de la cuenta: vale lo que cobró el banco, o un estimado mientras no se sepa
           const cobrado = L.parseMonto(fd.get('cobrado'));
           m.monCuenta = cta.mon;
@@ -999,7 +1085,7 @@
       const repetida = lista.some(function (c) { return c.id !== hoja.id && c.nombre.toLowerCase() === nombre.toLowerCase(); });
       if (repetida) return fallo('Ya hay una categoría con ese nombre.');
       if (hoja.id) lista.filter(function (c) { return c.id === hoja.id; })[0].nombre = nombre;
-      else lista.push({ id: (hoja.tipoCat === 'gasto' ? 'c-' : 'i-') + L.uid(), nombre: nombre });
+      else lista.push({ id: { gasto: 'c-', ingreso: 'i-', arkosGasto: 'ag-', arkosIngreso: 'ai-' }[hoja.tipoCat] + L.uid(), nombre: nombre });
       guardar(); cerrar(); pintar();
     },
     cambio: function (fd) {
@@ -1036,9 +1122,11 @@
           d.destino = otra ? otra.id : '';
         }
       } else {
+        // "Fuera de mis cuentas" es solo de Arkos: al volver a "Mío" se elige una cuenta
+        if (d.para !== 'arkos' && d.cuenta === '') d.cuenta = estado.cuentas[0].id;
         // al elegir cuenta, la moneda se acomoda a la de la cuenta; después se puede cambiar
-        if (e.target.name === 'cuenta') d.mon = cta.mon;
-        const cats = estado.categorias[d.tipo];
+        if (e.target.name === 'cuenta' && d.cuenta !== '') d.mon = cta.mon;
+        const cats = estado.categorias[L.claveCats({ tipo: d.tipo, arkos: d.para === 'arkos' })];
         if (!cats.some(function (c) { return c.id === d.cat; })) d.cat = cats[0].id;
         // "Otra persona": se suma a las opciones y queda marcada
         const otra = String(d.otra || '').trim();

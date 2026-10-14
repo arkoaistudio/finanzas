@@ -392,3 +392,78 @@ test('personas: eliminar borra el historial y devuelve el gasto a ser mío', () 
   assert.equal(L.propio(m), 2500);
   assert.equal(e.deudas.length, 0);
 });
+
+function conArkos() {
+  const e = base();
+  e.movs.push(
+    // de hace meses, fuera de mis cuentas: solo cuenta para el flujo de Arkos
+    { id: 'a1', tipo: 'gasto', arkos: true, monto: 4900, mon: 'USD', tc: 3.7, cuenta: '', cat: 'ag-iayapis', nota: 'fal.ai', fecha: '2026-06-04', creado: 10 },
+    { id: 'a2', tipo: 'ingreso', arkos: true, monto: 3800, mon: 'USD', tc: 3.7, cuenta: '', cat: 'ai-ventas', nota: '', fecha: '2026-07-15', creado: 11 },
+    // de este mes y pagado con BCP: mueve el saldo, pero no es gasto mío
+    { id: 'a3', tipo: 'gasto', arkos: true, monto: 18000, mon: 'PEN', tc: 3.5, cuenta: 'k-bcp', cat: 'ag-publicidad', nota: 'Meta Ads', fecha: '2026-10-07', creado: 12 },
+    { id: 'a4', tipo: 'ingreso', arkos: true, monto: 10000, mon: 'USD', tc: 3.5, cuenta: 'k-paypal', cat: 'ai-ventas', nota: '', fecha: '2026-10-08', creado: 13 }
+  );
+  return e;
+}
+
+test('arkos: no cuenta en mi resumen ni en mi presupuesto', () => {
+  const sin = base(), con = conArkos();
+  assert.deepEqual(L.resumenMes(con, '2026-10'), L.resumenMes(sin, '2026-10'));
+  assert.deepEqual(L.presupuestoMes(con, '2026-10'), L.presupuestoMes(sin, '2026-10'));
+});
+
+test('arkos: lo pagado con una cuenta mueve su saldo; lo de fuera no mueve nada', () => {
+  const s0 = L.saldos(base()), s1 = L.saldos(conArkos());
+  assert.equal(s1.filas[0].saldo, s0.filas[0].saldo - 18000);   // BCP
+  assert.equal(s1.filas[2].saldo, s0.filas[2].saldo + 10000);   // PayPal
+  assert.equal(s1.filas[1].saldo, s0.filas[1].saldo);
+});
+
+test('arkos: flujo mes a mes con acumulado y lo que salió de mis cuentas', () => {
+  const f = L.flujoArkos(conArkos());
+  assert.deepEqual(f.meses.map(function (x) { return x.mes; }), ['2026-06', '2026-07', '2026-10']);
+  assert.equal(f.meses[0].neto, -18130);                 // US$ 49 a 3.7
+  assert.equal(f.meses[0].desdeCuentas, 0);
+  assert.equal(f.meses[1].acumulado, -18130 + 14060);
+  const oct = f.meses[2];
+  assert.equal(oct.ingresos.total, 35000);
+  assert.equal(oct.ingresos.USD, 10000);
+  assert.equal(oct.gastos.total, 18000);
+  assert.equal(oct.neto, 17000);
+  assert.equal(oct.desdeCuentas, 18000 - 35000);
+  assert.equal(oct.porCategoria[0].nombre, 'Publicidad');
+  assert.equal(f.acumulado, -18130 + 14060 + 17000);
+  // un mes sin nada trae el acumulado de antes
+  const ago = L.arkosMes(f, '2026-08');
+  assert.equal(ago.n, 0);
+  assert.equal(ago.acumulado, -18130 + 14060);
+});
+
+test('arkos: en movimientos, lo de fuera solo aparece en su pantalla', () => {
+  const e = conArkos();
+  const ids = function (dias) { return [].concat.apply([], dias.map(function (d) { return d.movs.map(function (m) { return m.id; }); })).sort(); };
+  assert.equal(ids(L.diasDelMes(e, '2026-10', 'todo', '', 'mio')).indexOf('a3'), -1);
+  assert.ok(ids(L.diasDelMes(e, '2026-10', 'todo', '', 'cuentas')).indexOf('a3') >= 0);
+  assert.deepEqual(ids(L.diasDelMes(e, '2026-06', 'todo', '', 'cuentas')), []);
+  assert.deepEqual(ids(L.diasDelMes(e, '2026-06', 'todo', '', 'arkos')), ['a1']);
+  // el neto del día con un gasto de Arkos no cambia
+  const dia = L.diasDelMes(e, '2026-10', 'todo', '', 'cuentas').filter(function (d) { return d.fecha === '2026-10-07'; })[0];
+  assert.equal(dia.neto, 0);
+});
+
+test('arkos: pasa por el respaldo, sin cuenta se queda sin cuenta y sin reparto', () => {
+  const e = conArkos();
+  e.movs[e.movs.length - 2].partes = [{ persona: 'Andrea', monto: 100 }];
+  const r = L.validar(JSON.parse(JSON.stringify(e)));
+  assert.equal(r.ok, true);
+  const a1 = r.estado.movs.filter(function (m) { return m.id === 'a1'; })[0];
+  assert.equal(a1.arkos, true);
+  assert.equal(a1.cuenta, '');
+  assert.equal(a1.monCuenta, undefined);
+  assert.equal(r.estado.movs.filter(function (m) { return m.id === 'a3'; })[0].partes, undefined);
+  // un movimiento mío sin cuenta sigue cayendo en la primera cuenta
+  const r2 = L.validar({ v: 3, movs: [{ tipo: 'gasto', monto: 100, mon: 'PEN', fecha: '2026-10-01', cuenta: '' }] });
+  assert.equal(r2.estado.movs[0].cuenta, 'k-bcp');
+  assert.equal(r2.estado.categorias.arkosGasto.length, 7);
+  assert.ok(L.aCSV(e).indexOf('Arkos — Gasto;Fuera de mis cuentas;IA y APIs') >= 0);
+});

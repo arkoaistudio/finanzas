@@ -273,6 +273,49 @@ if (location.hostname !== '127.0.0.1' && location.hostname !== 'localhost') thro
     accion('mes', '[data-d="-1"]');
     ok('mes anterior vacío', q('.vacio'));
 
+    // Arkos: algo de hace meses fuera de mis cuentas, y algo de hoy pagado con BCP
+    const Lg = W().Logica, mesHoy = Lg.mesDe(Lg.hoyISO());
+    const bcpA = saldoBCP(), resA = JSON.stringify(Lg.resumenMes(est(), mesHoy)), presA = JSON.stringify(Lg.presupuestoMes(est(), mesHoy));
+    await ir('#arkos');
+    ok('Arkos vacío explica cómo anotar', q('.vacio') && texto().includes('Fuera de mis cuentas'));
+    accion('nuevo-mov', '[data-arkos]');
+    ok('desde Arkos el formulario arranca como de Arkos, con sus categorías y sin compartir',
+      q('#hoja input[name=para][value=arkos]').checked && q('#hoja input[name=cat][value=ag-iayapis]') && !q('#hoja [name=otra]'));
+    radio('cuenta', '');
+    radio('mon', 'USD');
+    ok('fuera de mis cuentas no pide lo cobrado', !q('#hoja [name=cobrado]'));
+    pon('monto', '49'); pon('fecha', '2026-05-04'); pon('nota', 'fal.ai');
+    enviar();
+    let ak = est().movs.filter(m => m.arkos);
+    ok('guarda lo de hace meses sin cuenta', ak.length === 1 && ak[0].cuenta === '' && ak[0].mon === 'USD' && ak[0].fecha === '2026-05-04' && !ak[0].monCuenta, ak);
+    ok('lo de fuera no mueve el saldo de BCP', saldoBCP() === bcpA, [saldoBCP(), bcpA]);
+    ok('salta a ese mes y lo muestra en el flujo', q('#cabecera h1').textContent === 'Mayo' && texto().includes('fal.ai') && texto().includes('Mayo 2026'), q('#cabecera h1').textContent);
+    accion('nuevo-mov');
+    ok('el + en la pantalla de Arkos también arranca como de Arkos', q('#hoja input[name=para][value=arkos]').checked);
+    radio('cuenta', 'k-bcp');
+    radio('cat', 'ag-publicidad');
+    pon('monto', '180'); pon('fecha', Lg.hoyISO());
+    enviar();
+    ok('lo de Arkos pagado con BCP baja su saldo', saldoBCP() === bcpA - 18000, [saldoBCP(), bcpA]);
+    ok('pero no cuenta en mi resumen ni en mi presupuesto', JSON.stringify(Lg.resumenMes(est(), mesHoy)) === resA && JSON.stringify(Lg.presupuestoMes(est(), mesHoy)) === presA);
+    ok('el mes a mes trae los dos meses', qq('#vista [data-accion=ir-mes]').length === 2);
+    await ir('#movimientos');
+    accion('filtro', '[data-f="todo"]');
+    ok('en Movimientos sale marcado como de Arkos', texto().includes('Arkos · BCP'));
+    await ir('#resumen');
+    ok('el Resumen trae la línea de Arkos', texto().includes('Arkos — aparte de lo tuyo') && texto().includes('de tus cuentas salió S/ 180.00'));
+    // pasar uno de fuera a "Mío" obliga a elegir una cuenta
+    await ir('#arkos');
+    accion('ir-mes', '[data-mes="2026-05"]');
+    accion('editar-mov');
+    radio('para', 'mio');
+    ok('al pasarlo a Mío ya no hay "Fuera de mis cuentas" y queda una cuenta elegida',
+      !q('#hoja input[name=cuenta][value=""]') && q('#hoja input[name=cuenta]:checked') && q('#hoja input[name=cat][value=c-comida]'));
+    accion('cerrar');
+    accion('editar-mov'); accion('borrar-mov');
+    ok('borrar uno de Arkos', est().movs.filter(m => m.arkos).length === 1);
+    await ir('#movimientos');
+
     // respaldo: lo que se exporta se puede volver a cargar igual
     const v = W().Logica.validar(JSON.parse(JSON.stringify(est())));
     ok('el estado guardado pasa la validación', v.ok && orden(v.estado) === orden(est()), [orden(v.estado), orden(est())]);

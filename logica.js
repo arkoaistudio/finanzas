@@ -7,7 +7,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  const VERSION = 3;
+  const VERSION = 4;
   const SIMBOLO = { PEN: 'S/', USD: 'US$' };
   const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
     'agosto', 'setiembre', 'octubre', 'noviembre', 'diciembre'];
@@ -135,6 +135,12 @@
           'Ocio', 'Ropa', 'Suscripciones', 'Otros'].map(cat),
         ingreso: ['Sueldo', 'Honorarios', 'Otros'].map(function (n) {
           const c = cat(n); c.id = 'i-' + c.id.slice(2); return c;
+        }),
+        arkosGasto: ['IA y APIs', 'Servidores', 'Software', 'Publicidad', 'Comisiones', 'Dominios', 'Otros'].map(function (n) {
+          const c = cat(n); c.id = 'ag-' + c.id.slice(2); return c;
+        }),
+        arkosIngreso: ['Ventas', 'Otros'].map(function (n) {
+          const c = cat(n); c.id = 'ai-' + c.id.slice(2); return c;
         })
       },
       cuentas: [
@@ -187,6 +193,15 @@
     return r;
   }
 
+  /* Un movimiento de Arkos (`arkos: true`) usa sus propias categorías y no cuenta en
+     lo mío: ni en el resumen, ni en el presupuesto. Si no tiene cuenta (`cuenta: ''`)
+     es solo un registro del flujo de Arkos, por ejemplo algo de hace meses, y no mueve
+     ningún saldo. */
+  function claveCats(m) {
+    if (m.tipo === 'transferencia') return 'gasto';
+    return m.arkos ? (m.tipo === 'ingreso' ? 'arkosIngreso' : 'arkosGasto') : m.tipo;
+  }
+
   function nombreCat(estado, tipo, id) {
     const lista = estado.categorias[tipo] || [];
     for (let i = 0; i < lista.length; i++) if (lista[i].id === id) return lista[i].nombre;
@@ -209,7 +224,7 @@
     };
     const porCat = {};
     for (const m of estado.movs) {
-      if (mesDe(m.fecha) !== mes || m.tipo === 'transferencia') continue;
+      if (mesDe(m.fecha) !== mes || m.tipo === 'transferencia' || m.arkos) continue;
       const g = m.tipo === 'ingreso' ? r.ingresos : r.gastos;
       const s = aSolesPropio(m);
       g[m.mon] += propio(m);
@@ -232,11 +247,15 @@
     return r;
   }
 
-  // Movimientos de un mes agrupados por día, lo más reciente arriba.
-  function diasDelMes(estado, mes, filtro, cuenta) {
+  /* Movimientos de un mes agrupados por día, lo más reciente arriba. `ambito`:
+     'mio' (lo mío, sin Arkos), 'cuentas' (lo mío más lo de Arkos que pasó por una
+     cuenta) o 'arkos' (solo Arkos). El neto del día es de lo mío, o de Arkos en 'arkos'. */
+  function diasDelMes(estado, mes, filtro, cuenta, ambito) {
+    ambito = ambito || 'mio';
     const dias = {};
     for (const m of estado.movs) {
       if (mesDe(m.fecha) !== mes) continue;
+      if (ambito === 'arkos' ? !m.arkos : m.arkos && (ambito === 'mio' || !m.cuenta)) continue;
       if (filtro && filtro !== 'todo' && m.tipo !== filtro) continue;
       if (cuenta && m.cuenta !== cuenta && m.destino !== cuenta) continue;
       (dias[m.fecha] = dias[m.fecha] || []).push(m);
@@ -244,7 +263,7 @@
     return Object.keys(dias).sort().reverse().map(function (f) {
       const movs = dias[f].sort(function (a, b) { return (b.creado || 0) - (a.creado || 0); });
       let neto = 0;
-      for (const m of movs) if (m.tipo !== 'transferencia') neto += (m.tipo === 'ingreso' ? 1 : -1) * aSolesPropio(m);
+      for (const m of movs) if (m.tipo !== 'transferencia' && !!m.arkos === (ambito === 'arkos')) neto += (m.tipo === 'ingreso' ? 1 : -1) * aSolesPropio(m);
       return { fecha: f, movs: movs, neto: neto };
     });
   }
@@ -253,7 +272,7 @@
   function presupuestoMes(estado, mes) {
     const gastado = {};
     for (const m of estado.movs) {
-      if (m.tipo !== 'gasto' || mesDe(m.fecha) !== mes) continue;
+      if (m.tipo !== 'gasto' || mesDe(m.fecha) !== mes || m.arkos) continue;
       gastado[m.cat] = (gastado[m.cat] || 0) + aSolesPropio(m);
     }
     const r = { filas: [], topeTotal: 0, gastadoConTope: 0, disponible: 0, hayTopes: false };
@@ -269,6 +288,52 @@
     }
     r.disponible = r.topeTotal - r.gastadoConTope;
     return r;
+  }
+
+  /* Flujo de caja de Arkos, mes a mes y en soles (los dólares al cambio con que se
+     anotaron). `desdeCuentas` es lo que Arkos sacó de mis cuentas menos lo que les
+     entró: lo que puse de mi bolsillo ese mes (negativo si Arkos me dejó plata). */
+  function flujoArkos(estado) {
+    const por = {};
+    const nuevo = function () {
+      return { ingresos: { PEN: 0, USD: 0, total: 0 }, gastos: { PEN: 0, USD: 0, total: 0 }, neto: 0, desdeCuentas: 0, n: 0, porCategoria: {} };
+    };
+    for (const m of estado.movs) {
+      if (!m.arkos || m.tipo === 'transferencia') continue;
+      const f = por[mesDe(m.fecha)] = por[mesDe(m.fecha)] || nuevo();
+      const ing = m.tipo === 'ingreso', s = aSoles(m);
+      const g = ing ? f.ingresos : f.gastos;
+      g[m.mon] += m.monto;
+      g.total += s;
+      f.neto += ing ? s : -s;
+      if (m.cuenta) f.desdeCuentas += ing ? -s : s;
+      if (!ing) f.porCategoria[m.cat] = (f.porCategoria[m.cat] || 0) + s;
+      f.n++;
+    }
+    let acumulado = 0;
+    const meses = Object.keys(por).sort().map(function (mes) {
+      const f = por[mes];
+      acumulado += f.neto;
+      f.mes = mes;
+      f.acumulado = acumulado;
+      f.porCategoria = Object.keys(f.porCategoria).map(function (id) {
+        return { cat: id, nombre: nombreCat(estado, 'arkosGasto', id), total: f.porCategoria[id],
+          pct: f.gastos.total ? Math.round(f.porCategoria[id] / f.gastos.total * 100) : 0 };
+      }).sort(function (a, b) { return b.total - a.total; });
+      return f;
+    });
+    return { meses: meses, acumulado: acumulado };
+  }
+
+  // Un mes del flujo de Arkos; si ese mes no tuvo nada, viene en cero con el acumulado de antes.
+  function arkosMes(flujo, mes) {
+    let antes = 0;
+    for (const f of flujo.meses) {
+      if (f.mes === mes) return f;
+      if (f.mes < mes) antes = f.acumulado;
+    }
+    return { mes: mes, ingresos: { PEN: 0, USD: 0, total: 0 }, gastos: { PEN: 0, USD: 0, total: 0 }, neto: 0,
+      desdeCuentas: 0, n: 0, porCategoria: [], acumulado: antes };
   }
 
   function progresoMeta(meta, hoy) {
@@ -377,7 +442,7 @@
       const previa = estado.deudas.filter(function (x) { return claveDe(x.persona) === claveDe(p.persona); })[0];
       estado.deudas.push({
         id: uid(), persona: previa ? previa.persona : p.persona, monto: p.monto, mon: m.mon,
-        nota: m.nota || nombreCat(estado, 'gasto', m.cat), fecha: m.fecha, pago: false, creado: m.creado || Date.now(), mov: m.id
+        nota: m.nota || nombreCat(estado, claveCats(m), m.cat), fecha: m.fecha, pago: false, creado: m.creado || Date.now(), mov: m.id
       });
     }
   }
@@ -457,7 +522,9 @@
       tc: typeof o.tc === 'number' && o.tc > 0 && o.tc < 100 ? o.tc : base.tc,
       categorias: {
         gasto: cats(o.categorias && o.categorias.gasto, base.categorias.gasto),
-        ingreso: cats(o.categorias && o.categorias.ingreso, base.categorias.ingreso)
+        ingreso: cats(o.categorias && o.categorias.ingreso, base.categorias.ingreso),
+        arkosGasto: cats(o.categorias && o.categorias.arkosGasto, base.categorias.arkosGasto),
+        arkosIngreso: cats(o.categorias && o.categorias.arkosIngreso, base.categorias.arkosIngreso)
       },
       cuentas: [], movs: [], topes: {}, metas: [], deudas: [],
       ultimoRespaldo: typeof o.ultimoRespaldo === 'string' ? o.ultimoRespaldo : null
@@ -470,14 +537,17 @@
     for (const m of o.movs) {
       if (!m || (m.tipo !== 'gasto' && m.tipo !== 'ingreso' && m.tipo !== 'transferencia')) continue;
       if (!entero(m.monto) || m.monto <= 0 || !SIMBOLO[m.mon] || !FECHA.test(m.fecha)) continue;
-      const cta = cuentaDe(e, m.cuenta) || e.cuentas[0];
+      const arkos = m.arkos === true && m.tipo !== 'transferencia';
+      const fuera = arkos && m.cuenta === '';   // de Arkos y fuera de mis cuentas
+      const cta = fuera ? null : cuentaDe(e, m.cuenta) || e.cuentas[0];
       const limpio = {
         id: texto(m.id) || uid(), tipo: m.tipo, monto: m.monto, mon: m.mon,
         tc: typeof m.tc === 'number' && m.tc > 0 ? m.tc : e.tc,
-        cuenta: cta.id, cat: texto(m.cat), nota: texto(m.nota, 200), fecha: m.fecha,
+        cuenta: fuera ? '' : cta.id, cat: texto(m.cat), nota: texto(m.nota, 200), fecha: m.fecha,
         creado: typeof m.creado === 'number' ? m.creado : 0
       };
-      if (m.tipo === 'gasto' && Array.isArray(m.partes) && m.partes.length) {
+      if (arkos) limpio.arkos = true;
+      if (m.tipo === 'gasto' && !arkos && Array.isArray(m.partes) && m.partes.length) {
         const partes = m.partes.filter(function (p) { return p && texto(p.persona).trim() && entero(p.monto) && p.monto > 0; })
           .map(function (p) { return { persona: texto(p.persona.trim(), 40), monto: p.monto }; });
         let suman = 0;
@@ -492,7 +562,7 @@
         limpio.destino = dest.id;
         limpio.llega = entero(m.llega) && m.llega > 0 ? m.llega : convertir(m.monto, cta.mon, dest.mon, limpio.tc);
         if (m.estimado && cta.mon !== dest.mon) limpio.estimado = true;
-      } else if (cta.mon !== m.mon) {
+      } else if (cta && cta.mon !== m.mon) {
         // pagado en una moneda desde una cuenta en otra: se guarda lo que movió en la cuenta
         const sabe = entero(m.cobrado) && m.cobrado > 0 && m.monCuenta === cta.mon;
         limpio.monCuenta = cta.mon;
@@ -546,12 +616,12 @@
     const plata = function (c) { return (c / 100).toFixed(2); };
     const filas = [];
     for (const m of estado.movs) {
-      const cta = (cuentaDe(estado, m.cuenta) || {}).nombre || '';
+      const cta = m.arkos && !m.cuenta ? 'Fuera de mis cuentas' : (cuentaDe(estado, m.cuenta) || {}).nombre || '';
       if (m.tipo === 'transferencia') {
         filas.push([m.fecha, 'Transferencia', cta + ' → ' + ((cuentaDe(estado, m.destino) || {}).nombre || ''), '',
           m.nota || '', m.mon, plata(m.monto), m.mon === 'USD' ? m.tc : '', plata(aSoles(m))]);
       } else {
-        filas.push([m.fecha, m.tipo === 'ingreso' ? 'Ingreso' : 'Gasto', cta, nombreCat(estado, m.tipo, m.cat),
+        filas.push([m.fecha, (m.arkos ? 'Arkos — ' : '') + (m.tipo === 'ingreso' ? 'Ingreso' : 'Gasto'), cta, nombreCat(estado, claveCats(m), m.cat),
           m.nota || '', m.mon, plata(m.monto), m.mon === 'USD' ? m.tc : '', plata(aSoles(m))]);
       }
     }
@@ -600,6 +670,20 @@
     mov('ingreso', 4800, 'i-sueldo', '', dia(antes, 1));
     mov('gasto', 1400, 'c-casa', 'Alquiler', dia(antes, 2));
     mov('gasto', 940, 'c-mercado', '', dia(antes, 12));
+    const ark = function (tipo, plata, cat, nota, fecha, mon, cuenta) {
+      mov(tipo, plata, cat, nota, fecha, mon, cuenta || 'k-paypal');
+      const m = e.movs[e.movs.length - 1];
+      m.arkos = true;
+      if (cuenta === '') { m.cuenta = ''; delete m.monCuenta; delete m.cobrado; delete m.estimado; }
+    };
+    ark('gasto', 49, 'ag-iayapis', 'fal.ai', dia(moverMes(mes, -3), 4), 'USD', '');
+    ark('gasto', 25, 'ag-servidores', 'Supabase', dia(moverMes(mes, -3), 6), 'USD', '');
+    ark('ingreso', 38, 'ai-ventas', 'Lemon Squeezy', dia(moverMes(mes, -2), 15), 'USD', '');
+    ark('gasto', 49, 'ag-iayapis', 'fal.ai', dia(moverMes(mes, -2), 4), 'USD', '');
+    ark('ingreso', 112, 'ai-ventas', 'Lemon Squeezy', dia(antes, 15), 'USD');
+    ark('gasto', 60, 'ag-iayapis', 'fal.ai', dia(antes, 4), 'USD');
+    ark('gasto', 180, 'ag-publicidad', 'Meta Ads', dia(mes, 1), 'PEN', 'k-bcp');
+    ark('ingreso', 145, 'ai-ventas', 'Lemon Squeezy', dia(mes, 1), 'USD');
     e.topes = { 'c-comida': 60000, 'c-mercado': 120000, 'c-transporte': 30000, 'c-ocio': 8000, 'c-casa': 140000 };
     e.metas = [
       { id: 'g1', nombre: 'Fondo de emergencia', objetivo: 1500000, mon: 'PEN', fecha: moverMes(mes, 9) + '-28',
@@ -621,7 +705,7 @@
     nombreMes: nombreMes, etiquetaDia: etiquetaDia, fechaCorta: fechaCorta, parseMonto: parseMonto,
     parseCambio: parseCambio, partes: partes, fmt: fmt, aTexto: aTexto, aSoles: aSoles,
     convertir: convertir, enCuenta: enCuenta, cuentaDe: cuentaDe, usosCuenta: usosCuenta, saldos: saldos,
-    estadoInicial: estadoInicial, nombreCat: nombreCat, usosCat: usosCat, resumenMes: resumenMes,
+    estadoInicial: estadoInicial, claveCats: claveCats, nombreCat: nombreCat, flujoArkos: flujoArkos, arkosMes: arkosMes, usosCat: usosCat, resumenMes: resumenMes,
     diasDelMes: diasDelMes, presupuestoMes: presupuestoMes, progresoMeta: progresoMeta,
     tipoDeuda: tipoDeuda, ROTULO_DEUDA: ROTULO_DEUDA, deudasPorPersona: deudasPorPersona, abiertos: abiertos, propio: propio, aSolesPropio: aSolesPropio,
     repartir: repartir, sincronizarPartes: sincronizarPartes,
