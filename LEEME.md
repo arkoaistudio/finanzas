@@ -1,6 +1,6 @@
-# Finanzas
+# Oink (Finanzas)
 
-App personal para el celular: gastos e ingresos por cuenta (BCP, Scotiabank,
+App personal para el celular (se llama Oink: chanchito negro, prima de `jc\oink`): gastos e ingresos por cuenta (BCP, Scotiabank,
 PayPal…), presupuesto mensual por categoría y metas de ahorro, en soles y dólares. Es una página que se instala
 como app (PWA). No tiene servidor ni cuentas: **los datos viven solo en el
 celular**, en el almacenamiento del navegador.
@@ -9,7 +9,7 @@ No es del estudio. Vive aparte de `jc\estudio` a propósito.
 
 ## Archivos
 
-- `index.html`, `estilo.css` — la página y el estilo (editorial suizo).
+- `index.html`, `estilo.css` — la página y el estilo (negro con acento lima; Inter Tight y Caveat para frases cortas).
 - `logica.js` — montos, fechas, resúmenes y respaldo. Sin nada de pantalla.
 - `app.js` — las pantallas y los formularios.
 - `sw.js` — deja la app funcionando sin internet.
@@ -78,7 +78,7 @@ Tiene que estar publicada con https (GitHub Pages sirve y es gratis).
   las que faltan) y salta los ids que ya están. Restaurar rechaza esos archivos
   (`agregar: true`) para no reemplazar todo por error. Los historiales con datos
   reales no van en este repo, que es público.
-- **Versión de los datos.** Va en `VERSION` de `logica.js` (hoy 4). `validar`
+- **Versión de los datos.** Va en `VERSION` de `logica.js` (hoy 5). `validar`
   migra lo guardado y los respaldos de versiones anteriores.
 - **Actualizar la app.** Al publicar cambios, subir el número de `CACHE` en
   `sw.js`. En el celular el cambio aparece la segunda vez que se abre.
@@ -88,9 +88,22 @@ Tiene que estar publicada con https (GitHub Pages sirve y es gratis).
 - Montos siempre en céntimos enteros. Los topes del presupuesto van en soles
   y son los mismos todos los meses.
 
+- **Ojito.** En "Tu plata hoy" tapa el total, lo que queda y las cuentas. Se guarda en
+  `finanzas.ocultar` del navegador, no en el respaldo.
+- **Yape y Plin** (`medios`): botones rápidos al anotar (`m:yape` en el formulario). El
+  movimiento sale de la cuenta asignada (Ajustes → Yape y Plin) y guarda `medio`. Se filtran
+  en Movimientos.
+- **Suscripciones** (`subs`, pantalla `#subs`): lo que se repite cada mes, cobros o lo que
+  llega (el sueldo). El día que toca y desde 3 días antes aparecen en el Inicio: Confirmar crea
+  el movimiento con `sub` (si es en dólares desde una cuenta en soles queda por confirmar),
+  Otro monto abre el formulario y No este mes la deja en `saltadas`. Una nueva cuyo día ya
+  pasó arranca el mes siguiente (`desde`).
+- **Devoluciones** (`tipo: 'devolucion'`): vuelve a la cuenta y se resta de lo gastado, de
+  su categoría y del tope. No es ingreso. Desde un gasto: "Me devolvieron algo de esto".
+- **Buscador** (`#buscar`): todos los meses, sin tildes ni mayúsculas (`buscar`).
+
 ## Lo que no hace (todavía)
 
-- Movimientos que se repiten solos (alquiler, sueldo).
 - Compartir un gasto que ya pagó otra persona (hoy se anota a mano como "Le debo").
 - Tarjetas de crédito como deuda, ni cuotas. El saldo inicial de una cuenta no
   puede ser negativo (el teclado numérico del iPhone no tiene signo menos).

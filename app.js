@@ -5,8 +5,9 @@
 
   const L = window.Logica;
   const CLAVE = 'finanzas.v1';
+  const CLAVE_OCULTAR = 'finanzas.ocultar';   // preferencia de este celular, no va en el respaldo
   const DEMO = /[?&]demo\b/.test(location.search);   // datos de muestra, no guarda
-  const VISTAS = ['resumen', 'movimientos', 'presupuesto', 'metas', 'deudas', 'arkos', 'ajustes'];
+  const VISTAS = ['resumen', 'movimientos', 'presupuesto', 'metas', 'deudas', 'arkos', 'ajustes', 'subs', 'buscar'];
   const DIAS_SIN_RESPALDO = 14;
 
   const $ = function (s, r) { return (r || document).querySelector(s); };
@@ -21,13 +22,41 @@
     izq: '<svg class="ico" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>',
     der: '<svg class="ico" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>',
     cerrar: '<svg class="ico" viewBox="0 0 24 24"><path d="M5 5l14 14M19 5L5 19"/></svg>',
-    ajustes: '<svg class="ico" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><path d="M14 4.5h4v5h-4zM6 14.5h4v5H6z"/></svg>'
+    ajustes: '<svg class="ico" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><path d="M14 4.5h4v5h-4zM6 14.5h4v5H6z"/></svg>',
+    buscar: '<svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/></svg>',
+    ojo: '<svg class="ico" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+    ojoNo: '<svg class="ico" viewBox="0 0 24 24"><path d="M4 4l16 16M10 5.7A9.6 9.6 0 0112 5.5c6 0 9.5 6.5 9.5 6.5a17 17 0 01-2.8 3.6M6.3 7.4C3.9 9.2 2.5 12 2.5 12S6 18.5 12 18.5c1.6 0 3-.4 4.2-1.1M9.9 9.9a3 3 0 004.2 4.2"/></svg>',
+    inicio: '<svg class="ico" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9H4z"/></svg>',
+    lista: '<svg class="ico" viewBox="0 0 24 24"><path d="M5 7h14M5 12h14M5 17h9"/></svg>',
+    topes: '<svg class="ico" viewBox="0 0 24 24"><path d="M5 20V12M12 20V5M19 20v-9"/></svg>',
+    meta: '<svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/></svg>',
+    personas: '<svg class="ico" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.5 3.3-5.5 6.5-5.5s5.9 2 6.5 5.5M16 4.8a3.5 3.5 0 010 6.4M18.5 14.8c1.7.8 2.7 2.6 3 5.2"/></svg>',
+    repetir: '<svg class="ico" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0113.7-5.6L20 8.5M20 4v4.5h-4.5M20 12a8 8 0 01-13.7 5.6L4 15.5M4 20v-4.5h4.5"/></svg>',
+    sale: '<svg class="ico" viewBox="0 0 24 24"><path d="M7 17L17 7M9 7h8v8"/></svg>',
+    entra: '<svg class="ico" viewBox="0 0 24 24"><path d="M17 7L7 17M15 17H7V9"/></svg>',
+    vuelve: '<svg class="ico" viewBox="0 0 24 24"><path d="M9 14l-5-5 5-5"/><path d="M4 9h10a6 6 0 010 12h-3"/></svg>',
+    cruza: '<svg class="ico" viewBox="0 0 24 24"><path d="M4 8h14l-3-3M20 16H6l3 3"/></svg>'
   };
 
+  // El chanchito negro: trazo claro fino y el hocico en lima.
+  function chanchito(tam) {
+    return '<svg class="chanchito" width="' + tam + '" height="' + tam + '" viewBox="0 0 64 64" aria-hidden="true">' +
+      '<rect x=".5" y=".5" width="63" height="63" rx="18" fill="#161618" stroke="rgba(255,255,255,.08)"/>' +
+      '<path d="M17 24 L15 14 L25 19" fill="#0B0B0C" stroke="#F4F4F2" stroke-width="2" stroke-linejoin="round"/>' +
+      '<path d="M47 24 L49 14 L39 19" fill="#0B0B0C" stroke="#F4F4F2" stroke-width="2" stroke-linejoin="round"/>' +
+      '<circle cx="32" cy="35" r="17" fill="#0B0B0C" stroke="#F4F4F2" stroke-width="2"/>' +
+      '<circle cx="25.5" cy="30" r="1.8" fill="#F4F4F2"/><circle cx="38.5" cy="30" r="1.8" fill="#F4F4F2"/>' +
+      '<ellipse cx="32" cy="39.5" rx="7.5" ry="5.5" fill="#D4FF3F"/>' +
+      '<circle cx="29.3" cy="39.5" r="1.4" fill="#0B0B0C"/><circle cx="34.7" cy="39.5" r="1.4" fill="#0B0B0C"/></svg>';
+  }
+
   let estado = cargar();
+  let ocultar = false;   // el ojito de "Tu plata hoy"
+  try { ocultar = localStorage.getItem(CLAVE_OCULTAR) === '1'; } catch (e) { /* sin almacenamiento */ }
   let mes = L.mesDe(L.hoyISO());
   let filtro = 'todo';
   let filtroCuenta = '';   // id de la cuenta que se está mirando en Movimientos, o vacío
+  let busqueda = '';
   let hoja = null;
 
   // ---------- guardado ----------
@@ -69,6 +98,11 @@
       (p.neg ? '<i class="sig">−</i>' : '') + '<i class="sim">' + p.sim + '</i>' + p.ent +
       '<i class="dec">.' + p.dec + '</i></span>';
   }
+  // Un monto que el ojito puede tapar.
+  function plata(c, mon, clase) {
+    return ocultar ? '<span class="num oculto ' + (clase || '') + '"><i class="sim">' + L.SIMBOLO[mon] + '</i>••••</span>' : num(c, mon, clase);
+  }
+  function plataTexto(c, mon) { return ocultar ? L.SIMBOLO[mon] + ' ••••' : L.fmt(c, mon); }
   function barraAv(pct, clase) {
     return '<span class="barra-av ' + (clase || '') + '"><i style="width:' + Math.max(0, Math.min(100, pct)) + '%"></i></span>';
   }
@@ -81,8 +115,9 @@
   function tcTexto() { return estado.tc.toFixed(3).replace(/0$/, ''); }
   // `enArkos`: la fila va en la pantalla de Arkos y no hace falta marcarla.
   function filaMov(m, enArkos) {
-    const cta = m.arkos && !m.cuenta ? { nombre: 'Fuera de mis cuentas' } : L.cuentaDe(estado, m.cuenta);
-    const abre = '<button class="fila" data-accion="editar-mov" data-id="' + esc(m.id) + '"><span class="izq"><b>';
+    const cta = m.arkos && !m.cuenta ? { nombre: 'Fuera de mis cuentas' } : { nombre: L.comoSePago(estado, m) };
+    const ic = { gasto: ['', ICO.sale], ingreso: [' verde', ICO.entra], devolucion: [' lima', ICO.vuelve], transferencia: ['', ICO.cruza] }[m.tipo];
+    const abre = '<button class="fila" data-accion="editar-mov" data-id="' + esc(m.id) + '"><span class="ic' + ic[0] + '">' + ic[1] + '</span><span class="izq"><b>';
     if (m.tipo === 'transferencia') {
       const dest = L.cuentaDe(estado, m.destino);
       return abre + 'Transferencia</b><span class="meta">' + esc(cta ? cta.nombre : '') + ' → ' + esc(dest ? dest.nombre : '') +
@@ -90,7 +125,7 @@
         (dest && dest.mon !== m.mon ? '<span class="meta' + (m.estimado ? ' pendiente' : '') + '">' + (m.estimado ? '≈ ' : '') +
           L.fmt(m.llega, dest.mon) + '</span>' : '') + '</span></button>';
     }
-    const ing = m.tipo === 'ingreso';
+    const ing = m.tipo !== 'gasto';   // un ingreso o una devolución: la plata vuelve
     let sub = '';
     if (m.monCuenta) {
       sub = '<span class="meta' + (m.estimado ? ' pendiente' : '') + '">' + (m.estimado ? '≈ ' : '') +
@@ -100,21 +135,9 @@
     }
     const comp = m.partes && m.partes.length;
     if (comp) sub += '<span class="meta">Tu parte ' + L.fmt(L.propio(m), m.mon) + '</span>';
-    return abre + esc(L.nombreCat(estado, L.claveCats(m), m.cat)) + '</b><span class="meta">' + (m.arkos && enArkos !== true ? 'Arkos · ' : '') + esc(cta ? cta.nombre : '') +
+    return abre + (m.tipo === 'devolucion' ? 'Devolución · ' : '') + esc(L.nombreCat(estado, L.claveCats(m), m.cat)) + '</b><span class="meta">' + (m.arkos && enArkos !== true ? 'Arkos · ' : '') + esc(cta ? cta.nombre : '') +
       (m.nota ? ' · ' + esc(m.nota) : '') + (comp ? ' · con ' + esc(m.partes.map(function (p) { return p.persona; }).join(', ')) : '') + '</span></span>' +
       '<span class="der' + (ing ? ' ingreso' : '') + '">' + (ing ? '+ ' : '') + L.fmt(m.monto, m.mon) + sub + '</span></button>';
-  }
-  function seccionCuentas() {
-    const s = L.saldos(estado);
-    let h = '<div class="encabezado"><span class="eyebrow">Cuentas — saldo de hoy</span>' +
-      '<a class="eyebrow enlace" href="#ajustes">Editar</a></div><div class="lista">';
-    for (const f of s.filas) {
-      h += '<button class="fila" data-accion="ver-cuenta" data-id="' + esc(f.id) + '"><span class="izq"><b>' + esc(f.nombre) +
-        '</b></span><span class="der' + (f.saldo < 0 ? ' negativo' : '') + '">' + L.fmt(f.saldo, f.mon) + '</span></button>';
-    }
-    return h + '<div class="fila total"><span class="izq"><b>Total</b><span class="meta libre">' +
-      (s.USD ? 'En soles, con ' + L.fmt(s.USD, 'USD') + ' al cambio de ' + tcTexto() : 'En soles') + '</span></span>' +
-      '<span class="der' + (s.total < 0 ? ' negativo' : '') + '">' + L.fmt(s.total, 'PEN') + '</span></div></div>';
   }
   // Saldo de una persona: cada moneda en su línea, verde si me debe y rojo si le debo.
   function saldoPersona(f) {
@@ -137,30 +160,6 @@
     return '<button class="fila" data-accion="persona" data-id="' + esc(f.clave) + '"><span class="izq"><b>' + esc(f.nombre) +
       '</b><span class="meta">' + esc(motivosPersona(f)) + '</span></span>' + saldoPersona(f) + '</button>';
   }
-  function seccionDeudas() {
-    const pendientes = L.deudasPorPersona(estado).filter(function (f) { return f.pendiente; });
-    const h = '<div class="encabezado"><span class="eyebrow">Por cobrar y por pagar</span>' +
-      '<a class="eyebrow enlace" href="#deudas">' + (pendientes.length ? 'Ver todo' : 'Anotar') + '</a></div><div class="lista">';
-    if (!pendientes.length) {
-      return h + '<div class="fila"><span class="izq"><span class="meta libre">Nadie te debe ni le debes nada. ' +
-        'Si compartes un taxi, anótalo acá para acordarte.</span></span></div></div>';
-    }
-    return h + pendientes.slice(0, 3).map(filaPersona).join('') + '</div>';
-  }
-  // En el Resumen: cómo le va a Arkos este mes. Ya está sumado en lo de arriba; acá se ve solo.
-  function seccionArkos() {
-    const f = L.flujoArkos(estado);
-    const h = '<div class="encabezado"><span class="eyebrow">Arkos — incluido arriba</span>' +
-      '<a class="eyebrow enlace" href="#arkos">' + (f.meses.length ? 'Ver solo Arkos' : 'Abrir') + '</a></div><div class="lista">';
-    if (!f.meses.length) {
-      return h + '<div class="fila"><span class="izq"><span class="meta libre">Marca un gasto o ingreso como de Arkos: ' +
-        'cuenta en tu mes como cualquier otro y además lo ves aparte, con su flujo mes a mes.</span></span></div></div>';
-    }
-    const m = L.arkosMes(f, mes);
-    const sub = m.n ? L.fmt(m.ingresos.total, 'PEN') + ' entraron · ' + L.fmt(m.gastos.total, 'PEN') + ' salieron' : 'Nada anotado este mes';
-    return h + '<a class="fila" href="#arkos"><span class="izq"><b>Resultado del mes</b><span class="meta libre">' + sub + '</span></span>' +
-      '<span class="der' + (m.neto > 0 ? ' ingreso' : m.neto < 0 ? ' negativo' : ' neutro') + '">' + (m.neto > 0 ? '+ ' : '') + L.fmt(m.neto, 'PEN') + '</span></a></div>';
-  }
   function vistaActual() {
     const h = location.hash.replace('#', '');
     return VISTAS.indexOf(h) >= 0 ? h : 'resumen';
@@ -173,85 +172,192 @@
   // ---------- pantallas ----------
 
   function pintarCabecera(v) {
+    const n = L.nombreMes(mes);
+    const volver = '<a class="cuadro" href="#resumen" aria-label="Volver">' + ICO.izq + '</a>';
+    const flechas = '<button class="cuadro" data-accion="mes" data-d="-1" aria-label="Mes anterior">' + ICO.izq + '</button>' +
+      '<button class="cuadro" data-accion="mes" data-d="1" aria-label="Mes siguiente">' + ICO.der + '</button>';
+    const titulo = function (arriba, texto) {
+      return '<div class="titulo"><span class="eyebrow">' + arriba + (DEMO ? ' · demo' : '') + '</span><h1>' + texto + '</h1></div>';
+    };
     let h;
-    if (v === 'arkos') {
-      const n = L.nombreMes(mes);
-      h = '<a class="cuadro" href="#resumen" style="border-left:0;border-right:1px solid var(--regla)" aria-label="Volver">' + ICO.izq + '</a>' +
-        '<div class="titulo"><span class="eyebrow gris">Arkos — N° ' + n.numero + ' — ' + n.anio + (DEMO ? ' — Demo' : '') + '</span><h1>' + n.nombre + '</h1></div>' +
-        '<button class="cuadro" data-accion="mes" data-d="-1" aria-label="Mes anterior">' + ICO.izq + '</button>' +
-        '<button class="cuadro" data-accion="mes" data-d="1" aria-label="Mes siguiente">' + ICO.der + '</button>';
-    } else if (v === 'ajustes' || v === 'deudas') {
-      h = '<a class="cuadro" href="#resumen" style="border-left:0;border-right:1px solid var(--regla)" aria-label="Volver">' + ICO.izq + '</a>' +
-        '<div class="titulo"><span class="eyebrow gris">Finanzas</span><h1>' + (v === 'deudas' ? 'Personas' : 'Ajustes') + '</h1></div>';
+    if (v === 'resumen') {
+      const hoy = L.hoyISO(), dia = L.etiquetaDia(hoy).split(' ');
+      h = chanchito(50) + '<div class="titulo"><span class="fecha">' + dia[0] + ' ' + Number(dia[1]) + ' ' + dia[2] + (DEMO ? ' · demo' : '') + '</span>' +
+        '<h1>Hola, Juan Carlos</h1></div>' +
+        '<a class="cuadro" href="#buscar" aria-label="Buscar">' + ICO.buscar + '</a>' +
+        '<a class="cuadro" href="#ajustes" aria-label="Ajustes">' + ICO.ajustes + '</a>';
+    } else if (v === 'arkos') {
+      h = volver + titulo('Arkos · ' + n.anio, n.nombre) + flechas;
+    } else if (v === 'movimientos' || v === 'presupuesto') {
+      h = titulo((v === 'presupuesto' ? 'Topes · ' : '') + n.anio, n.nombre) + flechas +
+        (v === 'movimientos' ? '<a class="cuadro" href="#buscar" aria-label="Buscar">' + ICO.buscar + '</a>' : '');
     } else if (v === 'metas') {
-      h = '<div class="titulo"><span class="eyebrow gris">Ahorro</span><h1>Metas</h1></div>' +
-        '<a class="cuadro" href="#ajustes" aria-label="Ajustes">' + ICO.ajustes + '</a>';
+      h = titulo('Ahorro', 'Metas') + '<a class="cuadro" href="#ajustes" aria-label="Ajustes">' + ICO.ajustes + '</a>';
     } else {
-      const n = L.nombreMes(mes);
-      h = '<div class="titulo"><span class="eyebrow gris">N° ' + n.numero + ' — ' + n.anio +
-        (DEMO ? ' — Demo' : '') + '</span><h1>' + n.nombre + '</h1></div>' +
-        '<button class="cuadro" data-accion="mes" data-d="-1" aria-label="Mes anterior">' + ICO.izq + '</button>' +
-        '<button class="cuadro" data-accion="mes" data-d="1" aria-label="Mes siguiente">' + ICO.der + '</button>' +
-        '<a class="cuadro" href="#ajustes" aria-label="Ajustes">' + ICO.ajustes + '</a>';
+      h = volver + titulo('Oink', { deudas: 'Personas', ajustes: 'Ajustes', subs: 'Suscripciones', buscar: 'Buscar' }[v]);
     }
     $('#cabecera').innerHTML = h;
   }
 
   function pintarBarra(v) {
-    const a = function (id, texto) {
-      return '<a href="#' + id + '"' + (v === id ? ' class="on"' : '') + '>' + texto + '</a>';
+    const a = function (id, ico, texto) {
+      return '<a href="#' + id + '"' + (v === id ? ' class="on"' : '') + '>' + ico + texto + '</a>';
     };
-    $('#barra').innerHTML = a('resumen', 'Resumen') + a('movimientos', 'Movimientos') +
+    $('#barra').innerHTML = a('resumen', ICO.inicio, 'Inicio') + a('movimientos', ICO.lista, 'Movimientos') +
       '<button data-accion="nuevo-mov" aria-label="Nuevo movimiento">' + ICO.mas + '</button>' +
-      a('presupuesto', 'Presupuesto') + a('metas', 'Metas');
+      a('presupuesto', ICO.topes, 'Topes') + a('metas', ICO.meta, 'Metas');
   }
 
   function vResumen() {
-    const r = L.resumenMes(estado, mes);
+    const r = L.resumenMes(estado, mes), s = L.saldos(estado), p = L.presupuestoMes(estado, mes);
+    const n = L.nombreMes(mes);
     let h = '';
+
     const dias = diasDesdeRespaldo();
     if (estado.movs.length >= 10 && (dias === null || dias >= DIAS_SIN_RESPALDO)) {
       h += '<div class="franja"><p>' + (dias === null ? 'Todavía no tienes un respaldo.' :
         'Tu último respaldo es de hace ' + dias + ' días.') + '</p>' +
         '<button class="btn sec chico" data-accion="respaldo">Guardar</button></div>';
     }
-    const largo = Math.abs(r.queda) >= 10000000 ? ' largo' : '';
-    h += '<section class="celda"><span class="eyebrow">Queda este mes</span>' +
-      num(r.queda, 'PEN', 'grande' + largo) +
-      '<p class="meta">Ingresos menos gastos y ahorro, en soles.' +
-      (r.ingresos.USD || r.gastos.USD ? ' Los dólares van al cambio con que se anotaron.' : '') + '</p></section>';
+
+    // lo que se cobra (o llega) estos días y falta confirmar
+    for (const x of L.subsPendientes(estado, L.hoyISO())) {
+      const sub = x.sub, ing = sub.tipo === 'ingreso', c = L.cuentaDe(estado, sub.cuenta);
+      const cuando = x.vence < 0 ? 'Ya ' + (ing ? 'llegó' : 'se cobró') : x.vence === 0 ? 'Hoy ' + (ing ? 'llega' : 'se cobra') :
+        x.vence === 1 ? 'Mañana ' + (ing ? 'llega' : 'se cobra') : 'En ' + x.vence + ' días ' + (ing ? 'llega' : 'se cobra');
+      h += '<div class="alerta"><span class="logo' + (ing ? ' ingreso' : '') + '">' + esc(sub.nombre.charAt(0).toUpperCase()) + '</span>' +
+        '<div class="tx"><b>' + cuando + ' ' + esc(sub.nombre) + '</b><span class="meta">' + L.fmt(sub.monto, sub.mon) + ' · ' +
+        esc(L.comoSePago(estado, sub)) + (c && c.mon !== sub.mon ? ' · luego confirmas lo cobrado' : '') + ' · ' + L.fechaCorta(x.fecha).slice(0, 6) + '</span></div>' +
+        '<div class="botones"><button class="btn prim chico" data-accion="sub-confirmar" data-id="' + esc(sub.id) + '" data-fecha="' + x.fecha + '">Confirmar</button>' +
+        '<button class="btn chico" data-accion="sub-otro" data-id="' + esc(sub.id) + '" data-fecha="' + x.fecha + '">Otro monto</button>' +
+        '<button class="btn texto chico" data-accion="sub-saltar" data-id="' + esc(sub.id) + '">No este mes</button></div></div>';
+    }
+
+    // tu plata hoy, con el ojito
+    const queda = r.queda >= 0 ? 'te quedan ' + plataTexto(r.queda, 'PEN') : 'te pasaste por ' + plataTexto(-r.queda, 'PEN');
+    h += '<section class="saldo"><div class="arriba"><span class="eyebrow">Tu plata hoy</span>' +
+      '<button class="ojo" data-accion="ocultar" aria-label="' + (ocultar ? 'Mostrar montos' : 'Ocultar montos') + '">' + (ocultar ? ICO.ojoNo : ICO.ojo) + '</button></div>' +
+      plata(s.total, 'PEN', 'grande' + (Math.abs(s.total) >= 10000000 ? ' largo' : '')) +
+      '<p class="mano">' + queda + ' en ' + n.nombre.toLowerCase() + '</p>' +
+      '<div class="cuentas">' + s.filas.map(function (f, i) {
+        return '<button class="cuenta" data-accion="ver-cuenta" data-id="' + esc(f.id) + '"><span><i style="background:var(--c' + (i % 5 + 2) + ')"></i>' + esc(f.nombre) + '</span>' +
+          '<b' + (f.saldo < 0 && !ocultar ? ' class="negativo"' : '') + '>' + plataTexto(f.saldo, f.mon) + '</b></button>';
+      }).join('') + '</div></section>';
+
+    // el mes en tres números
     h += '<section class="reticula tres">' +
-      '<div class="celda"><span class="eyebrow">Ingresos</span>' + num(r.ingresos.total, 'PEN', 'medio') +
-      (r.ingresos.USD ? '<span class="meta">' + L.fmt(r.ingresos.USD, 'USD') + ' incl.</span>' : '') + '</div>' +
-      '<div class="celda"><span class="eyebrow">Gastos</span>' + num(r.gastos.total, 'PEN', 'medio') +
-      (r.gastos.USD ? '<span class="meta">' + L.fmt(r.gastos.USD, 'USD') + ' incl.</span>' : '') + '</div>' +
-      '<div class="celda"><span class="eyebrow">Ahorro</span>' + num(r.ahorro, 'PEN', 'medio') + '</div>' +
-      '</section>';
+      '<div class="celda"><span class="eyebrow">Entró</span>' + num(r.ingresos.total, 'PEN', 'medio') + '</div>' +
+      '<div class="celda"><span class="eyebrow">Salió</span>' + num(r.gastos.total, 'PEN', 'medio') + '</div>' +
+      '<div class="celda"><span class="eyebrow">Ahorro</span>' + num(r.ahorro, 'PEN', 'medio') + '</div></section>';
 
-    if (!r.n) {
-      return h + '<section class="vacio"><span class="eyebrow gris">Sin movimientos</span>' +
-        '<p>Todavía no hay nada anotado en este mes.</p>' +
-        '<span class="meta">Toca el botón + de abajo para registrar un gasto o un ingreso.</span></section>' + seccionCuentas() + seccionDeudas() + seccionArkos();
+    // el anillo: lo mío gastado por categoría (sin Arkos) sobre lo que dan los topes
+    const filas = p.filas.filter(function (f) { return f.gastado > 0; }).sort(function (a, b) { return b.gastado - a.gastado; });
+    let gastado = 0;
+    for (const f of filas) gastado += f.gastado;
+    const base = Math.max(p.topeTotal, gastado);
+    h += '<section class="caja"><div class="encabezado"><span class="eyebrow">' + n.nombre + ', lo tuyo</span>' +
+      '<span class="mesnav"><button data-accion="mes" data-d="-1" aria-label="Mes anterior">' + ICO.izq + '</button>' +
+      '<button data-accion="mes" data-d="1" aria-label="Mes siguiente">' + ICO.der + '</button></span></div>';
+    if (!gastado) {
+      h += '<div class="vacio" style="border:0;padding:24px 0 6px"><p>Todavía no hay gastos en ' + n.nombre.toLowerCase() + '.</p>' +
+        '<span class="meta">Toca el + de abajo para anotar el primero.</span></div></section>';
+    } else {
+      const radio = 74, C = 2 * Math.PI * radio, hueco = 10;
+      let arcos = '', ya = 0;
+      filas.forEach(function (f, i) {
+        const largo = f.gastado / base * C;
+        arcos += '<circle cx="90" cy="90" r="' + radio + '" class="arco" style="stroke:var(--c' + (i % 6 + 1) + ')" stroke-dasharray="' +
+          Math.max(0.01, largo - hueco).toFixed(1) + ' ' + C.toFixed(1) + '" stroke-dashoffset="' + (-(ya + hueco / 2)).toFixed(1) + '"/>';
+        ya += largo;
+      });
+      h += '<div class="anillo-caja"><svg viewBox="0 0 180 180" aria-hidden="true"><circle cx="90" cy="90" r="' + radio + '" class="pista"/>' + arcos + '</svg>' +
+        '<div class="centro"><span class="meta">Gastaste</span>' + num(gastado, 'PEN') +
+        (p.hayTopes ? '<span class="meta">de ' + L.fmt(p.topeTotal, 'PEN') + '</span>' : '') + '</div></div>' +
+        '<p class="mano frase">' + (!p.hayTopes ? 'ponle topes a tus categorías' : p.disponible >= 0 ?
+          'te quedan ' + L.fmt(p.disponible, 'PEN') + ' de tus topes' : 'te pasaste ' + L.fmt(-p.disponible, 'PEN') + ' de tus topes') + '</p>' +
+        '<div class="cats">' + filas.slice(0, 4).map(function (f, i) {
+          const pct = f.tope ? Math.round(f.gastado / f.tope * 100) : Math.round(f.gastado / gastado * 100);
+          return '<button class="cat" data-accion="tope" data-id="' + esc(f.cat) + '"><span class="arriba"><span>' + esc(f.nombre) + '</span>' +
+            '<em' + (f.pasado ? ' class="negativo"' : '') + '>' + pct + '%' + (f.tope ? '' : ' del mes') + '</em></span>' +
+            '<span class="barra-av"><i style="width:' + Math.min(100, pct) + '%;background:' + (f.pasado ? 'var(--rojo)' : 'var(--c' + (i % 6 + 1) + ')') + '"></i></span></button>';
+        }).join('') + '</div>' +
+        '<a class="enlace" href="#presupuesto" style="display:block;text-align:center;margin-top:16px">Ver todos los topes</a></section>';
     }
-    h += seccionCuentas() + seccionDeudas() + seccionArkos();
 
-    if (r.porCategoria.length) {
-      h += '<div class="encabezado"><span class="eyebrow">Gasto por categoría</span>' +
-        '<a class="eyebrow enlace" href="#presupuesto">Presupuesto</a></div><div class="lista">';
-      for (const c of r.porCategoria) {
-        h += '<div class="fila bloque"><span class="arriba"><b>' + esc(c.nombre) + '</b><span>' +
-          L.fmt(c.total, 'PEN') + ' <span class="meta">' + c.pct + '%</span></span></span>' + barraAv(c.pct) + '</div>';
-      }
-      h += '</div>';
+    // Arkos este mes, con lo que entró y salió cada día
+    const fa = L.flujoArkos(estado);
+    if (fa.meses.length) {
+      const am = L.arkosMes(fa, mes), pd = L.porDia(estado, mes, true);
+      const tope = Math.max.apply(null, pd.ingresos.concat(pd.gastos).concat([1]));
+      const rayas = function (lista, color) {
+        return '<div class="rayas">' + lista.map(function (v) {
+          return '<i style="background:' + color + ';height:' + Math.max(8, Math.round(Math.max(0, v) / tope * 100)) + '%;opacity:' + (v > 0 ? 1 : .18) + '"></i>';
+        }).join('') + '</div>';
+      };
+      h += '<section class="caja"><div class="encabezado"><span class="eyebrow">Arkos · ' + n.nombre.toLowerCase() + '</span><a href="#arkos">Ver flujo</a></div>' +
+        '<div class="flujo"><div><span class="meta">Entró</span>' + num(am.ingresos.total, 'PEN') + rayas(pd.ingresos, 'var(--verde)') + '</div>' +
+        '<div><span class="meta">Salió</span>' + num(am.gastos.total, 'PEN') + rayas(pd.gastos, 'var(--c3)') + '</div></div></section>';
     }
 
+    // accesos: personas y suscripciones
+    const t = L.totalDeudas(estado);
+    const deben = L.textoSaldo(t.meDeben), debo = L.textoSaldo(t.debo);
+    const totSubs = L.totalSubs(estado);
+    h += '<section class="accesos">' +
+      '<a class="acceso" href="#deudas">' + ICO.personas + '<span><b>Personas</b><span class="meta">' +
+        (deben !== 'Saldado' ? 'Te deben ' + deben : debo !== 'Saldado' ? 'Debes ' + debo : 'Nadie te debe') + '</span></span></a>' +
+      '<a class="acceso" href="#subs">' + ICO.repetir + '<span><b>Suscripciones</b><span class="meta">' +
+        (totSubs ? L.fmt(totSubs, 'PEN') + ' al mes' : 'Claude, Netflix, sueldo…') + '</span></span></a></section>';
+
+    // lo último anotado
     const ultimos = [];
     for (const d of L.diasDelMes(estado, mes, 'todo')) {
       for (const m of d.movs) if (ultimos.length < 5) ultimos.push(m);
     }
-    h += '<div class="encabezado"><span class="eyebrow">Últimos movimientos</span>' +
-      '<a class="eyebrow enlace" href="#movimientos">Ver todos</a></div><div class="lista">' +
-      ultimos.map(filaMov).join('') + '</div>';
+    if (ultimos.length) {
+      h += '<div class="encabezado"><span class="eyebrow">Últimos</span><a href="#movimientos">Ver todos</a></div>' +
+        '<div class="lista">' + ultimos.map(filaMov).join('') + '</div>';
+    }
+    return h;
+  }
+
+  function vSubs() {
+    const anotar = '<button class="btn sec ancho" data-accion="sub">Nueva suscripción</button>';
+    if (!estado.subs.length) {
+      return '<section class="vacio"><span class="eyebrow">Sin suscripciones</span>' +
+        '<p>Lo que se repite cada mes, anotado solo.</p>' +
+        '<span class="meta">Claude, Netflix, Spotify… o el sueldo. El día que toca (y desde 3 días antes) aparece en el Inicio para confirmarlo, ' +
+        'cambiar el monto o saltarlo ese mes.</span><div class="acciones"><button class="btn prim" data-accion="sub">Nueva suscripción</button></div></section>';
+    }
+    const fila = function (sub) {
+      const ing = sub.tipo === 'ingreso';
+      return '<button class="fila" data-accion="sub" data-id="' + esc(sub.id) + '"><span class="ic' + (ing ? ' verde' : ' lima') + '">' + ICO.repetir + '</span>' +
+        '<span class="izq"><b>' + esc(sub.nombre) + '</b><span class="meta">' + (sub.pausada ? 'Pausada · ' : '') + 'Día ' + sub.dia + ' · ' +
+        esc(L.comoSePago(estado, sub)) + ' · ' + esc(L.nombreCat(estado, L.claveCats(sub), sub.cat)) + '</span></span>' +
+        '<span class="der' + (ing ? ' ingreso' : '') + (sub.pausada ? ' neutro' : '') + '">' + (ing ? '+ ' : '') + L.fmt(sub.monto, sub.mon) + '</span></button>';
+    };
+    const ord = estado.subs.slice().sort(function (a, b) { return a.dia - b.dia; });
+    const gastos = ord.filter(function (x) { return x.tipo !== 'ingreso'; }), ingresos = ord.filter(function (x) { return x.tipo === 'ingreso'; });
+    let h = '<section class="celda"><span class="eyebrow">Se va al mes</span>' + num(L.totalSubs(estado), 'PEN', 'grande') +
+      '<p class="meta">En soles, con los dólares al cambio de ' + tcTexto() + '. Sin contar lo pausado.</p></section>';
+    if (gastos.length) h += '<div class="encabezado"><span class="eyebrow">Cobros</span></div><div class="lista">' + gastos.map(fila).join('') + '</div>';
+    if (ingresos.length) h += '<div class="encabezado"><span class="eyebrow">Lo que llega</span></div><div class="lista">' + ingresos.map(fila).join('') + '</div>';
+    return h + anotar;
+  }
+
+  function vBuscar() {
+    return '<label class="buscador">' + ICO.buscar + '<input type="search" id="q" placeholder="Nota, categoría, cuenta, Yape, persona…" autocomplete="off" value="' + esc(busqueda) + '"></label>' +
+      '<div id="resultados">' + resultados() + '</div>';
+  }
+  function resultados() {
+    if (!busqueda.trim()) return '<p class="meta" style="padding:6px 6px 0">Busca en todos los meses. No importan las tildes ni las mayúsculas.</p>';
+    const r = L.buscar(estado, busqueda);
+    if (!r.n) return '<section class="vacio"><span class="eyebrow">Sin resultados</span><p>Nada con “' + esc(busqueda.trim()) + '”.</p></section>';
+    let h = '<p class="meta" style="padding:6px 6px 0">' + r.n + (r.n === 1 ? ' movimiento' : ' movimientos') + '</p>';
+    for (const d of r.dias) {
+      h += '<div class="dia"><span class="eyebrow">' + L.etiquetaDia(d.fecha) + ' ' + d.fecha.slice(0, 4) + '</span></div>' +
+        '<div class="lista">' + d.movs.map(filaMov).join('') + '</div>';
+    }
     return h;
   }
 
@@ -262,10 +368,12 @@
     const chipCta = function (id, texto) {
       return '<a class="chip' + (filtroCuenta === id ? ' on' : '') + '" href="#movimientos" data-accion="filtro-cuenta" data-id="' + esc(id) + '">' + esc(texto) + '</a>';
     };
-    let h = '<div class="filtros tira">' + chip('todo', 'Todo') + chip('gasto', 'Gastos') + chip('ingreso', 'Ingresos') +
-      (estado.movs.some(function (m) { return m.arkos; }) ? chip('arkos', 'Solo Arkos') : '') + '</div>' +
-      '<div class="filtros tira">' + chipCta('', 'Todas las cuentas') + estado.cuentas.map(function (c) { return chipCta(c.id, c.nombre); }).join('') + '</div>';
-    const dias = L.diasDelMes(estado, mes, filtro === 'arkos' ? 'todo' : filtro, filtroCuenta, filtro === 'arkos');
+    let h = '<div class="filtros">' + chip('todo', 'Todo') + chip('gasto', 'Gastos') + chip('ingreso', 'Ingresos') +
+      estado.medios.map(function (x) { return chip('m:' + x.id, esc(x.nombre)); }).join('') +
+      (estado.movs.some(function (m) { return m.arkos; }) ? chip('arkos', 'Arkos') : '') + '</div>' +
+      '<div class="filtros">' + chipCta('', 'Todas las cuentas') + estado.cuentas.map(function (c) { return chipCta(c.id, c.nombre); }).join('') + '</div>';
+    const porMedio = filtro.indexOf('m:') === 0;
+    const dias = L.diasDelMes(estado, mes, filtro === 'arkos' || porMedio ? 'todo' : filtro, filtroCuenta, filtro === 'arkos', porMedio ? filtro.slice(2) : '');
     if (!dias.length) {
       return h + '<section class="vacio"><span class="eyebrow gris">Sin movimientos</span>' +
         '<p>No hay nada anotado con este filtro en el mes.</p></section>';
@@ -273,7 +381,7 @@
     for (const d of dias) {
       h += '<div class="dia"><span class="eyebrow">' + L.etiquetaDia(d.fecha) + '</span>' +
         '<span class="meta">' + (d.neto > 0 ? '+ ' : '') + L.fmt(d.neto, 'PEN') + '</span></div>' +
-        '<div class="lista" style="border-top:0">' + d.movs.map(filaMov).join('') + '</div>';
+        '<div class="lista">' + d.movs.map(filaMov).join('') + '</div>';
     }
     return h;
   }
@@ -331,7 +439,7 @@
         '<button class="btn sec" data-accion="aporte" data-id="' + esc(g.id) + '" data-signo="-1">Retirar</button>' +
         '<button class="btn sec" data-accion="detalle-meta" data-id="' + esc(g.id) + '">Detalle</button></div></section>';
     });
-    return h + '<div class="celda" style="border-bottom:0"><button class="btn sec ancho" data-accion="nueva-meta">Nueva meta</button></div>';
+    return h + '<div><button class="btn sec ancho" data-accion="nueva-meta">Nueva meta</button></div>';
   }
 
   function vDeudas() {
@@ -352,13 +460,13 @@
     const saldadas = personas.filter(function (f) { return !f.pendiente; });
     if (pend.length) h += '<div class="encabezado"><span class="eyebrow">Pendiente</span></div><div class="lista">' + pend.map(filaPersona).join('') + '</div>';
     if (saldadas.length) h += '<div class="encabezado"><span class="eyebrow gris">Saldadas</span></div><div class="lista">' + saldadas.map(filaPersona).join('') + '</div>';
-    return h + '<div class="celda" style="border-bottom:0"><button class="btn sec ancho" data-accion="nueva-deuda">Nuevo apunte</button></div>';
+    return h + '<div><button class="btn sec ancho" data-accion="nueva-deuda">Nuevo apunte</button></div>';
   }
 
   function vArkos() {
     const f = L.flujoArkos(estado);
     const m = L.arkosMes(f, mes);
-    const anotar = '<div class="celda" style="border-bottom:0"><button class="btn prim ancho" data-accion="nuevo-mov" data-arkos="1">Anotar en Arkos</button></div>';
+    const anotar = '<div><button class="btn prim ancho" data-accion="nuevo-mov" data-arkos="1">Anotar en Arkos</button></div>';
     if (!f.meses.length) {
       return '<section class="vacio"><span class="eyebrow gris">Sin movimientos</span>' +
         '<p>Mira solo lo que entra y sale de Arkos.</p>' +
@@ -386,7 +494,7 @@
       for (const d of dias) {
         h += '<div class="dia"><span class="eyebrow">' + L.etiquetaDia(d.fecha) + '</span>' +
           '<span class="meta">' + (d.neto > 0 ? '+ ' : '') + L.fmt(d.neto, 'PEN') + '</span></div>' +
-          '<div class="lista" style="border-top:0">' + d.movs.map(function (x) { return filaMov(x, true); }).join('') + '</div>';
+          '<div class="lista">' + d.movs.map(function (x) { return filaMov(x, true); }).join('') + '</div>';
       }
     } else {
       h += '<div class="lista"><div class="fila"><span class="izq"><span class="meta libre">Nada anotado en este mes.</span></span></div></div>';
@@ -395,7 +503,7 @@
     h += '<div class="encabezado"><span class="eyebrow">Mes a mes</span><span class="eyebrow gris">Neto / acumulado</span></div><div class="lista">' +
       f.meses.slice().reverse().map(function (x) {
         const n = L.nombreMes(x.mes);
-        return '<button class="fila" data-accion="ir-mes" data-mes="' + x.mes + '"' + (x.mes === mes ? ' style="background:var(--papel-2)"' : '') + '>' +
+        return '<button class="fila" data-accion="ir-mes" data-mes="' + x.mes + '"' + (x.mes === mes ? ' style="background:var(--tarjeta-2)"' : '') + '>' +
           '<span class="izq"><b>' + n.nombre + ' ' + n.anio + '</b><span class="meta">+ ' + L.fmt(x.ingresos.total, 'PEN') + ' · − ' + L.fmt(x.gastos.total, 'PEN') + '</span></span>' +
           '<span class="der' + (x.neto > 0 ? ' ingreso' : x.neto < 0 ? ' negativo' : ' neutro') + '">' + (x.neto > 0 ? '+ ' : '') + L.fmt(x.neto, 'PEN') +
           '<span class="meta">' + L.fmt(x.acumulado, 'PEN') + '</span></span></button>';
@@ -422,6 +530,12 @@
         '<span class="flecha">' + ICO.der + '</span></button>';
     }
     ctas += '</div>';
+    ctas += '<div class="encabezado"><span class="eyebrow">Yape y Plin</span></div><div class="lista">' + estado.medios.map(function (x) {
+      const c = L.cuentaDe(estado, x.cuenta);
+      return '<button class="fila" data-accion="medio" data-id="' + esc(x.id) + '"><span class="izq"><b>' + esc(x.nombre) + '</b>' +
+        '<span class="meta">Sale de ' + esc(c ? c.nombre : '') + '</span></span><span class="flecha">' + ICO.der + '</span></button>';
+    }).join('') + '<a class="fila" href="#subs"><span class="izq"><b>Suscripciones</b><span class="meta">' + estado.subs.length +
+      (estado.subs.length === 1 ? ' anotada' : ' anotadas') + '</span></span><span class="flecha">' + ICO.der + '</span></a></div>';
     return ctas + '<div class="encabezado"><span class="eyebrow">Dólares</span></div><div class="lista">' +
       '<button class="fila" data-accion="cambio"><span class="izq"><b>Tipo de cambio</b>' +
       '<span class="meta libre">Para estimar lo que anotes en dólares y para el total de las cuentas. Lo ya anotado no cambia.</span></span>' +
@@ -429,7 +543,7 @@
 
       '<div class="encabezado"><span class="eyebrow">Respaldo</span><span class="eyebrow gris">' +
       (dias === null ? 'Nunca' : dias === 0 ? 'Hoy' : 'Hace ' + dias + (dias === 1 ? ' día' : ' días')) + '</span></div>' +
-      '<div class="celda" style="border-top:1px solid var(--linea-2)"><p class="meta">Los datos viven solo en este celular. ' +
+      '<div class="celda"><p class="meta">Los datos viven solo en este celular. ' +
       'Guarda un respaldo de vez en cuando en Archivos o iCloud: si pierdes el teléfono o borras la app, es lo único que los recupera.</p>' +
       '<div class="acciones"><button class="btn prim" data-accion="respaldo">Guardar respaldo</button>' +
       '<button class="btn sec" data-accion="restaurar">Restaurar</button>' +
@@ -439,7 +553,7 @@
       cats('gasto', 'Categorías de gasto') + cats('ingreso', 'Categorías de ingreso') +
       cats('arkosGasto', 'Arkos — gastos') + cats('arkosIngreso', 'Arkos — ingresos') +
 
-      '<div class="celda" style="border-bottom:0;padding-top:32px"><button class="btn peligro" data-accion="borrar-todo">Borrar todos los datos</button>' +
+      '<div style="padding-top:20px"><button class="btn peligro" data-accion="borrar-todo">Borrar todos los datos</button>' +
       '<p class="meta" style="margin-top:18px">' + estado.movs.length + ' movimientos guardados · versión ' + L.VERSION + '</p></div>';
   }
 
@@ -521,13 +635,15 @@
     mov: function () {
       const d = hoja.d;
       const transf = d.tipo === 'transferencia';
-      const cta = L.cuentaDe(estado, d.cuenta) || estado.cuentas[0];
+      const cta = elegida(d.cuenta).cta || estado.cuentas[0];
       const ark = !transf && d.para === 'arkos';
       const fuera = ark && d.cuenta === '';   // de Arkos y sin pasar por mis cuentas
-      const chips = function (nombre, valor, excluir, conFuera) {
-        const lista = estado.cuentas.filter(function (c) { return c.id !== excluir; });
+      // Yape y Plin van primero, como botones rápidos (`m:yape`); salen de la cuenta que tengan asignada
+      const chips = function (nombre, valor, excluir, conFuera, conMedios) {
+        let lista = estado.cuentas.filter(function (c) { return c.id !== excluir; });
+        if (conMedios) lista = estado.medios.map(function (x) { return { id: 'm:' + x.id, nombre: x.nombre, medio: true }; }).concat(lista);
         return '<div class="tira">' + (conFuera ? lista.concat({ id: '', nombre: 'Fuera de mis cuentas' }) : lista).map(function (c) {
-          return '<label class="chip"><input type="radio" name="' + nombre + '" value="' + esc(c.id) + '"' + (c.id === valor ? ' checked' : '') +
+          return '<label class="chip' + (c.medio ? ' medio' : '') + '"><input type="radio" name="' + nombre + '" value="' + esc(c.id) + '"' + (c.id === valor ? ' checked' : '') +
             ' data-repinta><span>' + esc(c.nombre) + '</span></label>';
         }).join('') + '</div>';
       };
@@ -539,8 +655,9 @@
           '<span class="meta ayuda">Déjalo vacío si todavía no sabes cuánto fue: se estima con el cambio de ' + String(hoja.tc) +
           '. Cuando veas el monto real, editas el movimiento y lo pones.</span></label>';
       };
-      let h = topeHoja(hoja.id ? 'Editar movimiento' : 'Nuevo movimiento') + '<form data-form="mov">' +
-        '<div class="campo">' + seg('tipo', [['gasto', 'Gasto'], ['ingreso', 'Ingreso'], ['transferencia', 'Transferir']], d.tipo, true) + '</div>';
+      const sub = hoja.sub && subDe(hoja.sub);
+      let h = topeHoja(sub ? esc(sub.nombre) + ' de ' + L.nombreMes(L.mesDe(d.fecha)).nombre.toLowerCase() : hoja.id ? 'Editar movimiento' : 'Nuevo movimiento') + '<form data-form="mov">' +
+        '<div class="campo">' + seg('tipo', [['gasto', 'Gasto'], ['ingreso', 'Ingreso'], ['devolucion', 'Devolución'], ['transferencia', 'Mover']], d.tipo, true) + '</div>';
       if (transf) {
         const dest = L.cuentaDe(estado, d.destino);
         h += campoMonto({ monto: d.monto, mon: cta.mon }, 'Monto') +
@@ -551,17 +668,49 @@
         h += '<div class="campo"><span class="eyebrow">Es</span>' + seg('para', [['mio', 'Mío'], ['arkos', 'De Arkos']], ark ? 'arkos' : 'mio', true) + '</div>' +
           campoMonto(d, 'Monto') +
           '<div class="campo"><span class="eyebrow">Moneda</span>' + seg('mon', MONEDAS, d.mon, true) + '</div>' +
-          '<div class="campo"><span class="eyebrow">' + (d.tipo === 'ingreso' ? 'Entra a' : 'Sale de') + '</span>' + chips('cuenta', fuera ? '' : cta.id, null, ark) +
+          '<div class="campo"><span class="eyebrow">' + (d.tipo === 'gasto' ? 'Sale de' : 'Entra a') + '</span>' + chips('cuenta', fuera ? '' : d.cuenta, null, ark, true) +
           (ark ? '<span class="meta ayuda">Cuenta en tu mes como cualquier otro y además se ve en la pantalla de Arkos. ' +
-            '"Fuera de mis cuentas" es para lo de antes de usar la app: cuenta en su mes, pero no mueve tus saldos de hoy.</span>' : '') + '</div>' +
-          (!fuera && cta.mon !== d.mon ? real('cobrado', (d.tipo === 'ingreso' ? 'Recibido en ' : 'Cobrado en ') + esc(cta.nombre), d.mon, cta.mon) : '') +
+            '"Fuera de mis cuentas" es para lo de antes de usar la app: cuenta en su mes, pero no mueve tus saldos de hoy.</span>' : '') +
+          (d.tipo === 'devolucion' ? '<span class="meta ayuda">Lo que te devolvieron vuelve a la cuenta y se resta de lo gastado en la categoría. No cuenta como ingreso.</span>' : '') + '</div>' +
+          (!fuera && cta.mon !== d.mon ? real('cobrado', (d.tipo === 'gasto' ? 'Cobrado en ' : 'Recibido en ') + esc(cta.nombre), d.mon, cta.mon) : '') +
           '<div class="campo"><span class="eyebrow">Categoría</span><div class="tira">' + estado.categorias[L.claveCats({ tipo: d.tipo, arkos: ark })].map(function (c) {
             return '<label class="chip"><input type="radio" name="cat" value="' + esc(c.id) + '"' + (c.id === d.cat ? ' checked' : '') + '><span>' + esc(c.nombre) + '</span></label>';
           }).join('') + '</div></div>' + (d.tipo === 'gasto' && !ark ? compartir(d) : '');
       }
       return h + '<div class="dos">' + campoFecha('fecha', 'Fecha', d.fecha) + campoTexto('nota', 'Nota', d.nota, 'placeholder="Opcional" maxlength="200"') + '</div>' +
         errorHoja() + '<div class="pie-hoja"><button class="btn prim ancho">Guardar</button>' +
+        (hoja.id && d.tipo === 'gasto' ? '<button type="button" class="btn sec ancho" data-accion="devolver">Me devolvieron algo de esto</button>' : '') +
         (hoja.id ? '<button type="button" class="btn peligro ancho" data-accion="borrar-mov">Eliminar</button>' : '') + '</div></form>';
+    },
+    sub: function () {
+      const d = hoja.d, ark = d.para === 'arkos';
+      const cta = elegida(d.cuenta).cta || estado.cuentas[0];
+      const lista = estado.medios.map(function (x) { return { id: 'm:' + x.id, nombre: x.nombre, medio: true }; }).concat(estado.cuentas);
+      return topeHoja(hoja.id ? 'Editar suscripción' : 'Nueva suscripción') + '<form data-form="sub">' +
+        '<div class="campo">' + seg('tipo', [['gasto', 'Se cobra'], ['ingreso', 'Me llega']], d.tipo, true) + '</div>' +
+        campoTexto('nombre', 'Nombre', d.nombre, 'placeholder="' + (d.tipo === 'ingreso' ? 'Sueldo' : 'Claude, Netflix…') + '" maxlength="30"') +
+        campoMonto(d, 'Cuánto, cada mes') +
+        '<div class="campo"><span class="eyebrow">Moneda</span>' + seg('mon', MONEDAS, d.mon, true) + '</div>' +
+        '<label class="campo"><span class="eyebrow">Día del mes</span><input type="text" name="dia" inputmode="numeric" autocomplete="off" maxlength="2" placeholder="1 a 31" value="' + esc(d.dia) + '">' +
+        '<span class="meta ayuda">Si el mes es más corto, cae el último día.</span></label>' +
+        '<div class="campo"><span class="eyebrow">Es</span>' + seg('para', [['mio', 'Mío'], ['arkos', 'De Arkos']], ark ? 'arkos' : 'mio', true) + '</div>' +
+        '<div class="campo"><span class="eyebrow">' + (d.tipo === 'ingreso' ? 'Entra a' : 'Sale de') + '</span><div class="tira">' + lista.map(function (c) {
+          return '<label class="chip' + (c.medio ? ' medio' : '') + '"><input type="radio" name="cuenta" value="' + esc(c.id) + '"' + (c.id === d.cuenta ? ' checked' : '') + ' data-repinta><span>' + esc(c.nombre) + '</span></label>';
+        }).join('') + '</div>' + (cta.mon !== d.mon ? '<span class="meta ayuda">Se anota con el cambio del día y queda por confirmar: cuando veas lo que cobró el banco, editas el movimiento.</span>' : '') + '</div>' +
+        '<div class="campo"><span class="eyebrow">Categoría</span><div class="tira">' + estado.categorias[L.claveCats({ tipo: d.tipo, arkos: ark })].map(function (c) {
+          return '<label class="chip"><input type="radio" name="cat" value="' + esc(c.id) + '"' + (c.id === d.cat ? ' checked' : '') + '><span>' + esc(c.nombre) + '</span></label>';
+        }).join('') + '</div></div>' +
+        (hoja.id ? '<div class="campo"><span class="eyebrow">Estado</span>' + seg('pausada', [['no', 'Activa'], ['si', 'Pausada']], d.pausada, false) + '</div>' : '') +
+        errorHoja() + '<div class="pie-hoja"><button class="btn prim ancho">Guardar</button>' +
+        (hoja.id ? '<button type="button" class="btn peligro ancho" data-accion="borrar-sub">Eliminar</button>' : '') + '</div></form>';
+    },
+    medio: function () {
+      const x = L.medioDe(estado, hoja.id);
+      return topeHoja(esc(x.nombre)) + '<form data-form="medio"><div class="campo"><span class="eyebrow">Sale de</span><div class="tira">' +
+        estado.cuentas.filter(function (c) { return c.mon === 'PEN'; }).map(function (c) {
+          return '<label class="chip"><input type="radio" name="cuenta" value="' + esc(c.id) + '"' + (c.id === x.cuenta ? ' checked' : '') + '><span>' + esc(c.nombre) + '</span></label>';
+        }).join('') + '</div><span class="meta ayuda">Lo que anotes con ' + esc(x.nombre) + ' sale de esta cuenta. Lo ya anotado no cambia.</span></div>' +
+        errorHoja() + '<div class="pie-hoja"><button class="btn prim ancho">Guardar</button></div></form>';
     },
     cuenta: function () {
       const usos = hoja.id ? L.usosCuenta(estado, hoja.id) : 0;
@@ -614,7 +763,7 @@
             '<span class="der' + (a.monto < 0 ? '' : ' ingreso') + '">' + (a.monto < 0 ? '' : '+ ') + L.fmt(a.monto, g.mon) + '</span></button>';
         }).join('') + '</div>';
       } else {
-        h += '<p class="meta" style="padding:0 var(--margen) 20px">Todavía no hay aportes.</p>';
+        h += '<p class="meta" >Todavía no hay aportes.</p>';
       }
       return h + '<div class="pie-hoja"><button class="btn sec ancho" data-accion="editar-meta" data-id="' + esc(g.id) + '">Editar la meta</button></div></div>';
     },
@@ -698,6 +847,12 @@
   function errorHoja() { return hoja.error ? '<p class="error">' + esc(hoja.error) + '</p>' : ''; }
   function persona(clave) { return L.deudasPorPersona(estado).filter(function (f) { return f.clave === clave; })[0]; }
   function meta(id) { return estado.metas.filter(function (g) { return g.id === id; })[0]; }
+  function subDe(id) { return estado.subs.filter(function (x) { return x.id === id; })[0]; }
+  // Lo elegido en "Sale de": una cuenta, o Yape/Plin (`m:yape`) que sale de su cuenta.
+  function elegida(v) {
+    const md = String(v || '').indexOf('m:') === 0 ? L.medioDe(estado, v.slice(2)) : null;
+    return { cta: md ? L.cuentaDe(estado, md.cuenta) : L.cuentaDe(estado, v), medio: md ? md.id : '' };
+  }
 
   function abrir(h, enfocar) {
     hoja = h;
@@ -729,7 +884,8 @@
     const v = vistaActual();
     pintarCabecera(v);
     pintarBarra(v);
-    $('#vista').innerHTML = { resumen: vResumen, movimientos: vMovimientos, presupuesto: vPresupuesto, metas: vMetas, deudas: vDeudas, arkos: vArkos, ajustes: vAjustes }[v]();
+    $('#vista').innerHTML = { resumen: vResumen, movimientos: vMovimientos, presupuesto: vPresupuesto, metas: vMetas, deudas: vDeudas, arkos: vArkos,
+      ajustes: vAjustes, subs: vSubs, buscar: vBuscar }[v]();
   }
 
   let relojAviso = 0;
@@ -820,11 +976,13 @@
       const ark = !!(dd && dd.arkos) || vistaActual() === 'arkos';
       let ultimo = null;
       for (const m of estado.movs) if (m.tipo !== 'transferencia' && m.cuenta && (!ultimo || (m.creado || 0) > (ultimo.creado || 0))) ultimo = m;
-      const cta = (ultimo && L.cuentaDe(estado, ultimo.cuenta)) || estado.cuentas[0];
+      const ini = ultimo && ultimo.medio && L.medioDe(estado, ultimo.medio) ? 'm:' + ultimo.medio :
+        ultimo && L.cuentaDe(estado, ultimo.cuenta) ? ultimo.cuenta : estado.cuentas[0].id;
+      const cta = elegida(ini).cta || estado.cuentas[0];
       const otra = estado.cuentas.filter(function (c) { return c.id !== cta.id; })[0];
       abrir({
         tipo: 'mov', id: null, tc: estado.tc,
-        d: { tipo: 'gasto', para: ark ? 'arkos' : 'mio', monto: '', mon: cta.mon, cuenta: cta.id, destino: otra ? otra.id : '', cobrado: '', llega: '',
+        d: { tipo: 'gasto', para: ark ? 'arkos' : 'mio', monto: '', mon: cta.mon, cuenta: ini, destino: otra ? otra.id : '', cobrado: '', llega: '',
           cat: estado.categorias[ark ? 'arkosGasto' : 'gasto'][0].id, fecha: L.mesDe(hoy) === mes ? hoy : mes + '-01', nota: '', con: [], extras: [], otra: '' }
       }, 'monto');
     },
@@ -836,7 +994,8 @@
       const otra = estado.cuentas.filter(function (c) { return c.id !== m.cuenta; })[0];
       abrir({
         tipo: 'mov', id: m.id, tc: m.tc || estado.tc,
-        d: { tipo: m.tipo, para: m.arkos ? 'arkos' : 'mio', monto: L.aTexto(m.monto), mon: m.mon, cuenta: m.cuenta, destino: m.destino || (otra ? otra.id : ''),
+        d: { tipo: m.tipo, para: m.arkos ? 'arkos' : 'mio', monto: L.aTexto(m.monto), mon: m.mon,
+          cuenta: m.medio && L.medioDe(estado, m.medio) ? 'm:' + m.medio : m.cuenta, destino: m.destino || (otra ? otra.id : ''),
           cobrado: m.monCuenta && !m.estimado ? L.aTexto(m.cobrado) : '',
           llega: transf && !m.estimado && m.llega !== m.monto ? L.aTexto(m.llega) : '',
           cat: transf ? estado.categorias.gasto[0].id : m.cat, fecha: m.fecha, nota: m.nota || '', con: [], extras: [], otra: '' }
@@ -852,6 +1011,53 @@
         pintarHoja();
       }
     },
+    // desde un gasto ya anotado: lo que te devolvieron, con la misma cuenta y categoría
+    devolver: function () {
+      const d = hoja.d;
+      abrir({ tipo: 'mov', id: null, tc: estado.tc,
+        d: { tipo: 'devolucion', para: d.para, monto: '', mon: d.mon, cuenta: d.cuenta, destino: d.destino, cobrado: '', llega: '',
+          cat: d.cat, fecha: L.hoyISO(), nota: d.nota, con: [], extras: [], otra: '' } }, 'monto');
+    },
+    ocultar: function () {
+      ocultar = !ocultar;
+      try { localStorage.setItem(CLAVE_OCULTAR, ocultar ? '1' : '0'); } catch (e) { /* sin almacenamiento */ }
+      pintar();
+    },
+
+    'sub-confirmar': function (d) {
+      const x = subDe(d.id);
+      if (!x) return;
+      estado.movs.push(L.movDeSub(estado, x, d.fecha));
+      guardar(); pintar(); aviso(x.nombre + ' anotado');
+    },
+    'sub-otro': function (d) {
+      const x = subDe(d.id);
+      if (!x) return;
+      abrir({ tipo: 'mov', id: null, tc: estado.tc, sub: x.id,
+        d: { tipo: x.tipo, para: x.arkos ? 'arkos' : 'mio', monto: L.aTexto(x.monto), mon: x.mon, cuenta: x.medio ? 'm:' + x.medio : x.cuenta,
+          destino: '', cobrado: '', llega: '', cat: x.cat, fecha: d.fecha, nota: x.nombre, con: [], extras: [], otra: '' } }, 'monto');
+    },
+    'sub-saltar': function (d) {
+      estado.saltadas.push(d.id + '@' + L.mesDe(L.hoyISO()));
+      guardar(); pintar(); aviso('Saltada este mes');
+    },
+    sub: function (d) {
+      const x = d.id ? subDe(d.id) : null;
+      const susc = estado.categorias.gasto.filter(function (c) { return /suscrip/i.test(c.nombre); })[0] || estado.categorias.gasto[0];
+      abrir({ tipo: 'sub', id: x ? x.id : null, d: x ?
+        { tipo: x.tipo, nombre: x.nombre, monto: L.aTexto(x.monto), mon: x.mon, dia: String(x.dia), para: x.arkos ? 'arkos' : 'mio',
+          cuenta: x.medio ? 'm:' + x.medio : x.cuenta, cat: x.cat, pausada: x.pausada ? 'si' : 'no' } :
+        { tipo: 'gasto', nombre: '', monto: '', mon: 'PEN', dia: '', para: 'mio', cuenta: estado.cuentas[0].id, cat: susc.id, pausada: 'no' } }, x ? null : 'nombre');
+    },
+    'borrar-sub': function () {
+      const x = subDe(hoja.id);
+      if (!confirm('¿Eliminar ' + x.nombre + '? Lo que ya anotaste de ella se queda.')) return;
+      estado.subs = estado.subs.filter(function (y) { return y.id !== x.id; });
+      estado.saltadas = estado.saltadas.filter(function (k) { return k.indexOf(x.id + '@') !== 0; });
+      guardar(); cerrar(); pintar(); aviso('Suscripción eliminada');
+    },
+    medio: function (d) { abrir({ tipo: 'medio', id: d.id, d: {} }); },
+
     'borrar-mov': function () {
       const m = estado.movs.filter(function (x) { return x.id === hoja.id; })[0];
       const comp = m && m.partes && m.partes.length;
@@ -953,17 +1159,20 @@
     },
     'borrar-cuenta': function () {
       estado.cuentas = estado.cuentas.filter(function (c) { return c.id !== hoja.id; });
+      // Yape o Plin que salían de esa cuenta pasan a la primera en soles
+      const otra = estado.cuentas.filter(function (c) { return c.mon === 'PEN'; })[0] || estado.cuentas[0];
+      estado.medios.forEach(function (x) { if (x.cuenta === hoja.id) x.cuenta = otra.id; });
       if (filtroCuenta === hoja.id) filtroCuenta = '';
       guardar(); cerrar(); pintar();
     },
 
     respaldo: async function () {
-      const ok = await entregar('finanzas-respaldo-' + L.hoyISO() + '.json', JSON.stringify(estado, null, 1), 'application/json');
+      const ok = await entregar('oink-respaldo-' + L.hoyISO() + '.json', JSON.stringify(estado, null, 1), 'application/json');
       if (!ok) return;
       estado.ultimoRespaldo = new Date().toISOString();
       guardar(); pintar();
     },
-    excel: function () { entregar('finanzas-' + L.hoyISO() + '.csv', L.aCSV(estado), 'text/csv'); },
+    excel: function () { entregar('oink-' + L.hoyISO() + '.csv', L.aCSV(estado), 'text/csv'); },
     restaurar: function () { paraAgregar = false; const i = $('#archivo'); i.value = ''; i.click(); },
     agregar: function () { paraAgregar = true; const i = $('#archivo'); i.value = ''; i.click(); },
     'borrar-todo': function () {
@@ -983,12 +1192,15 @@
       if (!fecha) return fallo('Falta la fecha.');
       const ark = tipo !== 'transferencia' && fd.get('para') === 'arkos';
       const fuera = ark && fd.get('cuenta') === '';
-      const cta = L.cuentaDe(estado, fd.get('cuenta'));
+      const sel = elegida(fd.get('cuenta')), cta = sel.cta;
       if (!cta && !fuera) return fallo('Elige una cuenta.');
       const viejo = hoja.id ? estado.movs.filter(function (x) { return x.id === hoja.id; })[0] : null;
       const m = { tipo: tipo, monto: monto, mon: tipo === 'transferencia' ? cta.mon : fd.get('mon'), tc: hoja.tc,
         cuenta: fuera ? '' : cta.id, cat: '', nota: String(fd.get('nota') || '').trim(), fecha: fecha };
       if (ark) m.arkos = true;
+      if (tipo !== 'transferencia' && sel.medio) m.medio = sel.medio;
+      const sub = hoja.sub || (viejo && viejo.sub);
+      if (tipo !== 'transferencia' && sub) m.sub = sub;
       if (tipo === 'transferencia') {
         const dest = L.cuentaDe(estado, fd.get('destino'));
         if (!dest || dest.id === cta.id) return fallo('Elige a qué cuenta va. Tiene que ser distinta de la que sale.');
@@ -1023,6 +1235,33 @@
       L.sincronizarPartes(estado, m);
       mes = L.mesDe(fecha);
       guardar(); cerrar(); pintar(); aviso('Guardado');
+    },
+    sub: function (fd) {
+      const nombre = String(fd.get('nombre') || '').trim();
+      if (!nombre) return fallo('Ponle un nombre.');
+      const monto = L.parseMonto(fd.get('monto'));
+      if (!monto) return fallo('Pon cuánto es cada mes.');
+      const dia = Number(String(fd.get('dia') || '').replace(/\D/g, ''));
+      if (!(dia >= 1 && dia <= 31)) return fallo('El día va del 1 al 31.');
+      const sel = elegida(fd.get('cuenta'));
+      if (!sel.cta) return fallo('Elige la cuenta.');
+      if (!fd.get('cat')) return fallo('Elige una categoría.');
+      // una nueva no pide este mes si su día ya pasó: lo de este mes ya lo anotaste a mano
+      const hoy = L.hoyISO(), viejo = hoja.id ? subDe(hoja.id) : null;
+      const x = { id: viejo ? viejo.id : L.uid(), nombre: nombre, tipo: fd.get('tipo') === 'ingreso' ? 'ingreso' : 'gasto', monto: monto, mon: fd.get('mon'),
+        dia: dia, cuenta: sel.cta.id, cat: fd.get('cat'), pausada: fd.get('pausada') === 'si',
+        desde: viejo ? viejo.desde : dia < Number(hoy.slice(8)) ? L.moverMes(L.mesDe(hoy), 1) : L.mesDe(hoy) };
+      if (fd.get('para') === 'arkos') x.arkos = true;
+      if (sel.medio) x.medio = sel.medio;
+      if (viejo) estado.subs[estado.subs.indexOf(viejo)] = x;
+      else estado.subs.push(x);
+      guardar(); cerrar(); pintar(); aviso('Guardado');
+    },
+    medio: function (fd) {
+      const c = L.cuentaDe(estado, fd.get('cuenta'));
+      if (!c) return fallo('Elige una cuenta.');
+      L.medioDe(estado, hoja.id).cuenta = c.id;
+      guardar(); cerrar(); pintar();
     },
     cuenta: function (fd) {
       const nombre = String(fd.get('nombre') || '').trim();
@@ -1139,8 +1378,9 @@
     hoja.error = '';
     if (hoja.tipo === 'mov') {
       const d = hoja.d;
-      const cta = L.cuentaDe(estado, d.cuenta) || estado.cuentas[0];
+      const cta = elegida(d.cuenta).cta || estado.cuentas[0];
       if (d.tipo === 'transferencia') {
+        d.cuenta = cta.id;   // Yape y Plin no transfieren: queda su cuenta
         if (!d.destino || d.destino === cta.id) {
           const otra = estado.cuentas.filter(function (c) { return c.id !== cta.id; })[0];
           d.destino = otra ? otra.id : '';
@@ -1163,6 +1403,12 @@
         d.otra = '';
       }
     }
+    if (hoja.tipo === 'sub') {
+      const d = hoja.d, c = elegida(d.cuenta).cta;
+      if (e.target.name === 'cuenta' && c) d.mon = c.mon;
+      const cats = estado.categorias[L.claveCats({ tipo: d.tipo, arkos: d.para === 'arkos' })];
+      if (!cats.some(function (x) { return x.id === d.cat; })) d.cat = cats[0].id;
+    }
     if (hoja.tipo === 'deuda') {
       const c = L.cuentaDe(estado, hoja.d.cuenta);
       if (!c || c.mon !== hoja.d.mon) hoja.d.cuenta = '';
@@ -1171,6 +1417,7 @@
   });
   // mientras se tipea el monto, se actualiza el estimado del campo de al lado
   document.addEventListener('input', function (e) {
+    if (e.target.id === 'q') { busqueda = e.target.value; $('#resultados').innerHTML = resultados(); return; }
     if (!hoja) return;
     if (e.target.name === 'monto') {
       const i = $('#hoja [data-estima]');

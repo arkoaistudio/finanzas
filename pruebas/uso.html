@@ -92,10 +92,10 @@ if (location.hostname !== '127.0.0.1' && location.hostname !== 'localhost') thro
     enviar();
     e = est();
     ok('guarda la transferencia', e.movs[3].tipo === 'transferencia' && e.movs[3].monto === 10000 && e.movs[3].mon === 'USD' && e.movs[3].llega === 37200 && e.movs[3].destino === 'k-bcp', e.movs[3]);
-    ok('la transferencia no cambia lo que queda', q('.num.grande').textContent === 'S/4,109.67', q('.num.grande').textContent);
+    ok('la transferencia no cambia lo que queda', q('.saldo .mano').textContent.includes('te quedan S/ 4,109.67'), q('.saldo .mano').textContent);
     const s = W().Logica.saldos(e);
     ok('saldos: BCP 281.67 y PayPal 1,100', s.filas[0].saldo === 28167 && s.filas[2].saldo === 110000, s);
-    ok('el resumen muestra los saldos y el total', texto().includes('S/ 281.67') && texto().includes('US$ 1,100.00') && texto().includes('S/ 4,131.67'), texto().slice(0, 600));
+    ok('el resumen muestra los saldos y el total', texto().includes('S/ 281.67') && texto().includes('US$ 1,100.00') && q('.saldo .num.grande').textContent === 'S/4,131.67', texto().slice(0, 600));
 
     accion('editar-mov', '[data-id="' + e.movs[0].id + '"]');
     ok('editar trae el monto', q('#hoja [name=monto]').value === '18.50');
@@ -197,7 +197,7 @@ if (location.hostname !== '127.0.0.1' && location.hostname !== 'localhost') thro
     accion('persona'); accion('editar-deuda'); accion('borrar-deuda');
     ok('se puede borrar un apunte', est().deudas.length === 3);
     await ir('#resumen');
-    ok('borrar el último pago devuelve la deuda y el resumen la muestra', texto().includes('Por cobrar y por pagar') && texto().includes('Andrea') && texto().includes('S/ 8.00'), texto());
+    ok('borrar el último pago devuelve la deuda y el resumen la muestra', texto().includes('Te deben S/ 8.00'), texto());
 
     // gasto compartido: un taxi de S/ 25 con Andrea y Luis, y que la deuda salga sola
     const cambio = el => el.dispatchEvent(new (W().Event)('change', { bubbles: true }));
@@ -306,7 +306,7 @@ if (location.hostname !== '127.0.0.1' && location.hostname !== 'localhost') thro
     ok('el filtro "Solo Arkos" deja solo lo de Arkos', qq('#vista [data-accion=editar-mov]').length === 1 && texto().includes('Arkos · BCP'));
     accion('filtro', '[data-f="todo"]');
     await ir('#resumen');
-    ok('el Resumen trae la línea de Arkos y su categoría', texto().includes('Arkos — incluido arriba') && texto().includes('Arkos · Publicidad'));
+    ok('el Inicio trae la tarjeta de Arkos', texto().includes('Ver flujo') && !!q('.flujo'));
     // pasar uno de fuera a "Mío" obliga a elegir una cuenta
     await ir('#arkos');
     accion('ir-mes', '[data-mes="2026-05"]');
@@ -327,7 +327,7 @@ if (location.hostname !== '127.0.0.1' && location.hostname !== 'localhost') thro
     await espera(500);
     const claves = await W().caches.keys();
     const n = claves.length ? (await (await W().caches.open(claves[0])).keys()).length : 0;
-    ok('service worker activo y con los 10 archivos guardados', reg && claves.length === 1 && n === 10, { claves, n });
+    ok('service worker activo y con los 11 archivos guardados', reg && claves.length === 1 && n === 11, { claves, n });
 
     ok('sin errores de JavaScript', !q('#aviso.fallo') || q('#aviso').hidden, q('#aviso').textContent);
   } catch (err) {

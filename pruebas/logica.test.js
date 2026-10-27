@@ -504,3 +504,65 @@ test('arkos: pasa por el respaldo, sin cuenta se queda sin cuenta y sin reparto'
   assert.equal(r2.estado.categorias.arkosGasto.length, 7);
   assert.ok(L.aCSV(e).indexOf('Arkos — Gasto;Fuera de mis cuentas;IA y APIs') >= 0);
 });
+
+test('devolución: vuelve a la cuenta y baja lo gastado, la categoría y el tope', () => {
+  const e = L.estadoInicial();
+  e.cuentas[0].inicial = 10000;
+  e.topes['c-ropa'] = 20000;
+  e.movs.push({ id: 'a', tipo: 'gasto', monto: 9000, mon: 'PEN', tc: 3.5, cuenta: 'k-bcp', cat: 'c-ropa', nota: '', fecha: '2026-10-05', creado: 1 });
+  e.movs.push({ id: 'b', tipo: 'devolucion', monto: 3000, mon: 'PEN', tc: 3.5, cuenta: 'k-bcp', cat: 'c-ropa', nota: '', fecha: '2026-10-07', creado: 2 });
+  assert.equal(L.saldos(e).filas[0].saldo, 4000);
+  const r = L.resumenMes(e, '2026-10');
+  assert.equal(r.gastos.total, 6000);
+  assert.equal(r.ingresos.total, 0);
+  assert.equal(r.porCategoria[0].total, 6000);
+  assert.equal(L.presupuestoMes(e, '2026-10').filas.filter(f => f.cat === 'c-ropa')[0].gastado, 6000);
+  assert.equal(L.diasDelMes(e, '2026-10', 'todo')[0].neto, 3000);
+  assert.equal(L.diasDelMes(e, '2026-10', 'gasto').length, 2);    // el filtro de gastos también las muestra
+  const v = L.validar(JSON.parse(JSON.stringify(e)));
+  assert.equal(v.estado.movs[1].tipo, 'devolucion');
+});
+
+test('yape y plin: salen de su cuenta, se filtran y pasan por el respaldo', () => {
+  const e = L.estadoInicial();
+  assert.deepEqual(e.medios.map(x => [x.id, x.cuenta]), [['yape', 'k-bcp'], ['plin', 'k-scotiabank']]);
+  e.movs.push({ id: 'a', tipo: 'gasto', monto: 1500, mon: 'PEN', tc: 3.5, cuenta: 'k-bcp', medio: 'yape', cat: 'c-comida', nota: 'Menú', fecha: '2026-10-05', creado: 1 });
+  e.movs.push({ id: 'b', tipo: 'gasto', monto: 800, mon: 'PEN', tc: 3.5, cuenta: 'k-bcp', cat: 'c-comida', nota: '', fecha: '2026-10-05', creado: 2 });
+  assert.equal(L.comoSePago(e, e.movs[0]), 'Yape · BCP');
+  assert.equal(L.diasDelMes(e, '2026-10', 'todo', '', false, 'yape')[0].movs.length, 1);
+  const v = L.validar(JSON.parse(JSON.stringify(e))).estado;
+  assert.equal(v.movs[0].medio, 'yape');
+  assert.equal(v.movs[1].medio, undefined);
+  // lo guardado en la versión 4 no trae medios y arranca con los de siempre
+  const viejo = JSON.parse(JSON.stringify(e)); delete viejo.medios; viejo.v = 4;
+  assert.equal(L.validar(viejo).estado.medios.length, 2);
+});
+
+test('suscripciones: piden confirmar desde 3 días antes, una vez por mes, y se pueden saltar', () => {
+  const e = L.estadoInicial();
+  e.subs.push({ id: 's1', nombre: 'Claude', tipo: 'gasto', monto: 2000, mon: 'USD', dia: 31, cuenta: 'k-bcp', cat: 'c-suscripciones', desde: '', pausada: false });
+  e.subs.push({ id: 's2', nombre: 'Sueldo', tipo: 'ingreso', monto: 480000, mon: 'PEN', dia: 15, cuenta: 'k-bcp', cat: 'i-sueldo', desde: '', pausada: false });
+  assert.equal(L.subsPendientes(e, '2026-11-10').length, 0);
+  // noviembre tiene 30: la del 31 cae el 30
+  const p = L.subsPendientes(e, '2026-11-27');
+  assert.deepEqual(p.map(x => [x.sub.id, x.fecha, x.vence]), [['s2', '2026-11-15', -12], ['s1', '2026-11-30', 3]]);
+  // confirmar: dólares desde una cuenta en soles queda por confirmar
+  const m = L.movDeSub(e, e.subs[0], '2026-11-30');
+  assert.equal(m.sub, 's1'); assert.equal(m.monCuenta, 'PEN'); assert.equal(m.estimado, true); assert.equal(m.cobrado, 7000);
+  e.movs.push(m);
+  e.saltadas.push('s2@2026-11');
+  assert.equal(L.subsPendientes(e, '2026-11-30').length, 0);
+  assert.equal(L.subsPendientes(e, '2026-12-14').length, 1);       // al mes siguiente vuelve
+  assert.equal(L.totalSubs(e), 7000);                               // el sueldo no suma
+  const v = L.validar(JSON.parse(JSON.stringify(e))).estado;
+  assert.equal(v.subs.length, 2); assert.equal(v.saltadas[0], 's2@2026-11'); assert.equal(v.movs[0].sub, 's1');
+});
+
+test('buscador: en todos los meses, sin tildes ni mayúsculas', () => {
+  const e = L.demo('2026-10-26');
+  assert.ok(L.buscar(e, 'ALQUILER').n >= 2);
+  assert.ok(L.buscar(e, 'devolucion').n >= 1);
+  assert.ok(L.buscar(e, 'yape').n >= 1);
+  assert.ok(L.buscar(e, 'andrea').n >= 1);
+  assert.equal(L.buscar(e, '   ').n, 0);
+});

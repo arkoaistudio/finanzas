@@ -1,9 +1,9 @@
 /* Deja la app funcionando sin internet. Sirve lo guardado al toque y, si hay
    conexión, baja la versión nueva por detrás: el cambio se ve al abrir de nuevo.
    Al publicar cambios conviene subir el número de CACHE. */
-const CACHE = 'finanzas-9';
+const CACHE = 'finanzas-10';
 const ARCHIVOS = ['./', 'index.html', 'estilo.css', 'logica.js', 'app.js', 'manifest.webmanifest',
-  'fuentes/InterTight.woff2', 'iconos/icono-180.png', 'iconos/icono-192.png', 'iconos/icono-512.png'];
+  'fuentes/InterTight.woff2', 'fuentes/Caveat.woff2', 'iconos/icono-180.png', 'iconos/icono-192.png', 'iconos/icono-512.png'];
 
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(ARCHIVOS); }).then(function () { return self.skipWaiting(); }));
