@@ -1439,5 +1439,10 @@
   const local = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || local)) {
     navigator.serviceWorker.register('sw.js').catch(function () {});
+    // cuando entra una versión nueva se recarga sola, salvo que estés anotando algo
+    const habia = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (habia && !hoja) location.reload();
+    });
   }
 })();
